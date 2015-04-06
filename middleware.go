@@ -30,8 +30,8 @@ func MongoMiddleware(s *mgo.Session, dname string) negroni.HandlerFunc {
 // ensures it has access the project provided in the url parameter.
 func AuthMiddleware() negroni.HandlerFunc {
 	return negroni.HandlerFunc(func(w http.ResponseWriter, req *http.Request, next http.HandlerFunc) {
-		var db *mgo.Database
-		if db, ok := context.Get(req, "db").(*mgo.Database); !ok {
+		db, ok := context.Get(req, "db").(*mgo.Database)
+		if !ok {
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}

@@ -76,7 +76,9 @@ func main() {
 			log.Fatal("Could not connect to database. Error: ", err.Error())
 		}
 	}
+	log.Println("Successfully connected to database")
 
+	log.Println("Starting drone API server")
 	r := mux.NewRouter()
 	r.HandleFunc("/api/export/{id}", Export).Methods("GET")
 	r.HandleFunc("/api/import/{id}", Import).Methods("POST")
