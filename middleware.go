@@ -32,28 +32,28 @@ func AuthMiddleware() negroni.HandlerFunc {
 	return negroni.HandlerFunc(func(w http.ResponseWriter, req *http.Request, next http.HandlerFunc) {
 		db, ok := context.Get(req, "db").(*mgo.Database)
 		if !ok {
-			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			R.JSON(w, http.StatusInternalServerError, &DroneResponse{Status: "Error", Message: "Internal server error"})
 			return
 		}
 		a := req.Header.Get("Authorization")
 		if a == "" {
-			http.Error(w, "Not Authorized", http.StatusUnauthorized)
+			R.JSON(w, http.StatusUnauthorized, &DroneResponse{Status: "Error", Message: "Not Authorized"})
 			return
 		}
 		data, err := base64.StdEncoding.DecodeString(strings.Replace(a, "Basic ", "", 1))
 		if err != nil {
-			http.Error(w, "Not Authorized", http.StatusUnauthorized)
+			R.JSON(w, http.StatusUnauthorized, &DroneResponse{Status: "Error", Message: "Not Authorized"})
 			return
 		}
 		parts := strings.Split(string(data), ":")
 		if len(parts) < 2 {
-			http.Error(w, "Not Authorized", http.StatusUnauthorized)
+			R.JSON(w, http.StatusUnauthorized, &DroneResponse{Status: "Error", Message: "Not Authorized"})
 			return
 		}
 		user := &User{}
 		in := []bson.M{bson.M{"address": parts[0], "verified": false}}
 		if err := db.C("users").Find(bson.M{"emails": bson.M{"$in": in}}).One(&user); err != nil {
-			http.Error(w, "Not Authorized", http.StatusUnauthorized)
+			R.JSON(w, http.StatusUnauthorized, &DroneResponse{Status: "Error", Message: "Not Authorized"})
 			return
 		}
 		shaHash := sha256.New()
@@ -63,14 +63,14 @@ func AuthMiddleware() negroni.HandlerFunc {
 		}
 		h := hex.EncodeToString(shaHash.Sum(nil))
 		if err := bcrypt.CompareHashAndPassword([]byte(user.Services.Password.Bcrypt), []byte(h)); err != nil {
-			http.Error(w, "Not Authorized", http.StatusUnauthorized)
+			R.JSON(w, http.StatusUnauthorized, &DroneResponse{Status: "Error", Message: "Not Authorized"})
 			return
 		}
 		vars := mux.Vars(req)
 		pid := vars["pid"]
 		q := bson.M{"_id": pid, "$or": []bson.M{bson.M{"owner": user.Id}, bson.M{"contributors": user.Id}}}
 		if count, err := db.C("projects").Find(q).Count(); err != nil || count == 0 {
-			http.Error(w, "Not Authorized", http.StatusForbidden)
+			R.JSON(w, http.StatusForbidden, &DroneResponse{Status: "Error", Message: "Forbidden"})
 			return
 		}
 		context.Set(req, "user", user)

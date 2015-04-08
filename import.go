@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"time"
 
@@ -16,7 +17,7 @@ import (
 )
 
 const (
-	VERSION           = "1.0.0"
+	VERSION           = "0.1.0"
 	DRONE_LOG_HISTORY = 500
 )
 
@@ -53,7 +54,7 @@ func Import(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// Validate required fields
-	if doc.ProjectId == "" || !bson.IsObjectIdHex(doc.ProjectId) || doc.Commands == nil || len(doc.Commands) <= 0 {
+	if doc.ProjectId == "" || doc.Commands == nil || len(doc.Commands) <= 0 {
 		R.JSON(w, http.StatusInternalServerError, &DroneResponse{Status: "Error", Message: "Missing required field or invalid format"})
 		return
 	}
@@ -104,7 +105,10 @@ func Import(w http.ResponseWriter, req *http.Request) {
 		project.Description = doc.Description
 	}
 
-	// TODO: ensure indexes
+	// Ensure indexes
+	db.C(HostsColl).EnsureIndexKey("project_id", "string_addr")
+	db.C(PortsColl).EnsureIndexKey("project_id", "host_id", "port", "protocol")
+	db.C(VulnerabilitiesColl).EnsureIndexKey("project_id", "plugin_ids")
 
 	for _, docHost := range doc.Hosts {
 		host := &lair.Host{}
@@ -123,7 +127,7 @@ func Import(w http.ResponseWriter, req *http.Request) {
 		host.ProjectId = pid
 		host.Alive = docHost.Alive
 		host.StringAddr = docHost.StringAddr
-		host.LongAddr = docHost.LongAddr
+		host.LongAddr = IpToInt(net.ParseIP(host.StringAddr))
 
 		if host.MacAddr == "" {
 			host.MacAddr = docHost.MACAddr
@@ -188,7 +192,7 @@ func Import(w http.ResponseWriter, req *http.Request) {
 		}
 
 		if !knownHost {
-			msg := fmt.Sprintf("%s - New host found: %s", time.Now().String, docHost.StringAddr)
+			msg := fmt.Sprintf("%s - New host found: %s", time.Now().String(), docHost.StringAddr)
 			project.DroneLog = append(project.DroneLog, msg)
 		}
 
@@ -254,7 +258,7 @@ func Import(w http.ResponseWriter, req *http.Request) {
 				}
 				msg := fmt.Sprintf(
 					"%s - New port found: %d/%s (%s)",
-					time.Now().String,
+					time.Now().String(),
 					docPort.PortNum,
 					docPort.Protocol,
 					docPort.Service,
@@ -323,7 +327,7 @@ func Import(w http.ResponseWriter, req *http.Request) {
 			}
 			msg := fmt.Sprintf(
 				"%s - New vulnerability found: %s",
-				time.Now().String,
+				time.Now().String(),
 				docVuln.Title,
 			)
 			project.DroneLog = append(project.DroneLog, msg)
@@ -345,12 +349,6 @@ func Import(w http.ResponseWriter, req *http.Request) {
 			vuln.Solution = docVuln.Solution
 			if vuln.Evidence != docVuln.Evidence {
 				vuln.Evidence = vuln.Evidence + "\n\n" + docVuln.Evidence
-			}
-			vuln.Cvss = docVuln.CVSS
-
-			vuln.Status = docVuln.Status
-			if !IsValidStatus(vuln.Status) {
-				vuln.Status = lair.StatusGrey
 			}
 
 			// Add any new CVEs
@@ -383,7 +381,7 @@ func Import(w http.ResponseWriter, req *http.Request) {
 					vuln.LastModifiedBy = doc.Tool
 					msg := fmt.Sprintf(
 						"%s - %s:%d/%s - New vulnerability found: %s",
-						time.Now().String,
+						time.Now().String(),
 						hk.StringAddr,
 						hk.PortNum,
 						hk.Protocol,

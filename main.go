@@ -79,15 +79,25 @@ func main() {
 	log.Println("Successfully connected to database")
 
 	log.Println("Starting drone API server")
-	r := mux.NewRouter()
-	r.HandleFunc("/api/export/{id}", Export).Methods("GET")
-	r.HandleFunc("/api/import/{id}", Import).Methods("POST")
+
+	importRouter := mux.NewRouter()
+	importRouter.HandleFunc("/api/import/{pid}", Import).Methods("POST")
+
+	negImport := negroni.New(
+		negroni.NewLogger(),
+		negroni.NewRecovery(),
+	)
+	negImport.Use(MongoMiddleware(s, dname))
+	negImport.Use(AuthMiddleware())
+	negImport.UseHandler(importRouter)
+
+	router := mux.NewRouter()
+	router.Handle("/api/import/{pid}", negImport)
 	server := negroni.New(
 		negroni.NewLogger(),
 		negroni.NewRecovery(),
 	)
-	server.Use(MongoMiddleware(s, dname))
-	server.Use(AuthMiddleware())
-	server.UseHandler(r)
+	server.UseHandler(router)
+
 	log.Fatal(http.ListenAndServeTLS(apiListener, certPath, keyPath, server))
 }
