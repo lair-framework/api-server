@@ -11,6 +11,9 @@ import (
 
 	"github.com/codegangsta/negroni"
 	"github.com/gorilla/mux"
+	"github.com/lair-framework/api-server/app"
+	"github.com/lair-framework/api-server/handlers"
+	"github.com/lair-framework/api-server/middleware"
 	"gopkg.in/mgo.v2"
 )
 
@@ -80,19 +83,24 @@ func main() {
 
 	log.Println("Starting drone API server")
 
+	a := app.New()
+
 	importRouter := mux.NewRouter()
-	importRouter.HandleFunc("/api/import/{pid}", Import).Methods("POST")
+	importRouter.HandleFunc("/api/projects/{pid}", handlers.UpdateProject(a)).Methods("PATCH")
+	importRouter.HandleFunc("/api/projects/{pid}", handlers.ShowProject(a)).Methods("GET")
+	importRouter.HandleFunc("/api/projects", handlers.IndexProject(a)).Methods("GET")
 
 	negImport := negroni.New(
 		negroni.NewLogger(),
 		negroni.NewRecovery(),
 	)
-	negImport.Use(MongoMiddleware(s, dname))
-	negImport.Use(AuthMiddleware())
+	negImport.Use(middleware.MongoMiddleware(s, dname))
+	negImport.Use(middleware.AuthMiddleware(a))
 	negImport.UseHandler(importRouter)
 
 	router := mux.NewRouter()
-	router.Handle("/api/import/{pid}", negImport)
+	router.Handle("/api/projects/{pid}", negImport)
+	router.Handle("/api/projects", negImport)
 	server := negroni.New(
 		negroni.NewLogger(),
 		negroni.NewRecovery(),

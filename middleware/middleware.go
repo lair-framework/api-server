@@ -1,4 +1,4 @@
-package main
+package middleware
 
 import (
 	"crypto/sha256"
@@ -10,6 +10,7 @@ import (
 	"github.com/codegangsta/negroni"
 	"github.com/gorilla/context"
 	"github.com/gorilla/mux"
+	"github.com/lair-framework/api-server/app"
 	"golang.org/x/crypto/bcrypt"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
@@ -28,32 +29,32 @@ func MongoMiddleware(s *mgo.Session, dname string) negroni.HandlerFunc {
 
 // Auth is a middleware to authenicate a user to Lair's meteor resources and
 // ensures it has access the project provided in the url parameter.
-func AuthMiddleware() negroni.HandlerFunc {
+func AuthMiddleware(server *app.App) negroni.HandlerFunc {
 	return negroni.HandlerFunc(func(w http.ResponseWriter, req *http.Request, next http.HandlerFunc) {
 		db, ok := context.Get(req, "db").(*mgo.Database)
 		if !ok {
-			R.JSON(w, http.StatusInternalServerError, &DroneResponse{Status: "Error", Message: "Internal server error"})
+			server.R.JSON(w, http.StatusInternalServerError, &app.Response{Status: "Error", Message: "Internal server error"})
 			return
 		}
 		a := req.Header.Get("Authorization")
 		if a == "" {
-			R.JSON(w, http.StatusUnauthorized, &DroneResponse{Status: "Error", Message: "Not Authorized"})
+			server.R.JSON(w, http.StatusUnauthorized, &app.Response{Status: "Error", Message: "Not Authorized"})
 			return
 		}
 		data, err := base64.StdEncoding.DecodeString(strings.Replace(a, "Basic ", "", 1))
 		if err != nil {
-			R.JSON(w, http.StatusUnauthorized, &DroneResponse{Status: "Error", Message: "Not Authorized"})
+			server.R.JSON(w, http.StatusUnauthorized, &app.Response{Status: "Error", Message: "Not Authorized"})
 			return
 		}
 		parts := strings.Split(string(data), ":")
 		if len(parts) < 2 {
-			R.JSON(w, http.StatusUnauthorized, &DroneResponse{Status: "Error", Message: "Not Authorized"})
+			server.R.JSON(w, http.StatusUnauthorized, &app.Response{Status: "Error", Message: "Not Authorized"})
 			return
 		}
 		user := &User{}
 		in := []bson.M{bson.M{"address": parts[0], "verified": false}}
 		if err := db.C("users").Find(bson.M{"emails": bson.M{"$in": in}}).One(&user); err != nil {
-			R.JSON(w, http.StatusUnauthorized, &DroneResponse{Status: "Error", Message: "Not Authorized"})
+			server.R.JSON(w, http.StatusUnauthorized, &app.Response{Status: "Error", Message: "Not Authorized"})
 			return
 		}
 		shaHash := sha256.New()
@@ -63,14 +64,14 @@ func AuthMiddleware() negroni.HandlerFunc {
 		}
 		h := hex.EncodeToString(shaHash.Sum(nil))
 		if err := bcrypt.CompareHashAndPassword([]byte(user.Services.Password.Bcrypt), []byte(h)); err != nil {
-			R.JSON(w, http.StatusUnauthorized, &DroneResponse{Status: "Error", Message: "Not Authorized"})
+			server.R.JSON(w, http.StatusUnauthorized, &app.Response{Status: "Error", Message: "Not Authorized"})
 			return
 		}
 		vars := mux.Vars(req)
 		pid := vars["pid"]
 		q := bson.M{"_id": pid, "$or": []bson.M{bson.M{"owner": user.Id}, bson.M{"contributors": user.Id}}}
 		if count, err := db.C("projects").Find(q).Count(); err != nil || count == 0 {
-			R.JSON(w, http.StatusForbidden, &DroneResponse{Status: "Error", Message: "Forbidden"})
+			server.R.JSON(w, http.StatusForbidden, &app.Response{Status: "Error", Message: "Forbidden"})
 			return
 		}
 		context.Set(req, "user", user)
