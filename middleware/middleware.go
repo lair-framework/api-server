@@ -68,11 +68,14 @@ func AuthMiddleware(server *app.App) negroni.HandlerFunc {
 			return
 		}
 		vars := mux.Vars(req)
-		pid := vars["pid"]
-		q := bson.M{"_id": pid, "$or": []bson.M{bson.M{"owner": user.Id}, bson.M{"contributors": user.Id}}}
-		if count, err := db.C("projects").Find(q).Count(); err != nil || count == 0 {
-			server.R.JSON(w, http.StatusForbidden, &app.Response{Status: "Error", Message: "Forbidden"})
-			return
+		pid, ok := vars["pid"]
+		if ok {
+			// project id present means route requires it, check for authorization
+			q := bson.M{"_id": pid, "$or": []bson.M{bson.M{"owner": user.Id}, bson.M{"contributors": user.Id}}}
+			if count, err := db.C("projects").Find(q).Count(); err != nil || count == 0 {
+				server.R.JSON(w, http.StatusForbidden, &app.Response{Status: "Error", Message: "Forbidden"})
+				return
+			}
 		}
 		context.Set(req, "user", user)
 		next(w, req)

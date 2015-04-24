@@ -10,13 +10,16 @@ import (
 	"time"
 
 	"github.com/gorilla/context"
+	"github.com/gorilla/mux"
 	"github.com/lair-framework/api-server/app"
 	"github.com/lair-framework/api-server/lib/ip"
+	"github.com/lair-framework/api-server/middleware"
 	"github.com/lair-framework/go-lair"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 )
 
+// Add/update a project using additive, smart merge
 func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
 		body, err := ioutil.ReadAll(req.Body)
@@ -401,11 +404,54 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 	}
 }
 
+// Retrieve a single project
 func ShowProject(server *app.App) func(w http.ResponseWriter, req *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
+		db := context.Get(req, "db").(*mgo.Database)
+		if db == nil {
+			server.R.JSON(w, http.StatusInternalServerError, &app.Response{Status: "Error", Message: "Unable to access database"})
+			return
+		}
+
+		vars := mux.Vars(req)
+		pid := vars["pid"]
+		project := &lair.Project{}
+		if err := db.C(server.C.Projects).FindId(pid).One(&project); err != nil {
+			server.R.JSON(w, http.StatusInternalServerError, &app.Response{Status: "Error", Message: "Unable to retrieve project or project does not exist"})
+			return
+		}
+
+		server.R.JSON(w, http.StatusOK, project)
 	}
 }
+
+// Retrieve a list of all projects that a user owns or is a contributor for
 func IndexProject(server *app.App) func(w http.ResponseWriter, req *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
+		db := context.Get(req, "db").(*mgo.Database)
+		if db == nil {
+			server.R.JSON(w, http.StatusInternalServerError, &app.Response{Status: "Error", Message: "Unable to access database"})
+			return
+		}
+
+		user := context.Get(req, "user").(*middleware.User)
+		if user == nil {
+			server.R.JSON(w, http.StatusInternalServerError, &app.Response{Status: "Error", Message: "Unable to retrieve user"})
+			return
+		}
+
+		// Ensure query is restricted to only projects to which the user is authorized
+		or := &bson.M{
+			"$or": []bson.M{
+				bson.M{"owner": user.Id},
+				bson.M{"contributors": user.Id},
+			},
+		}
+		var projects []lair.Project
+		if err := db.C(server.C.Projects).Find(or).All(&projects); err != nil {
+			server.R.JSON(w, http.StatusInternalServerError, &app.Response{Status: "Error", Message: "Unable to retrieve project index"})
+			return
+		}
+		server.R.JSON(w, http.StatusOK, projects)
 	}
 }
