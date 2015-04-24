@@ -60,22 +60,10 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 		}
 
 		// Append new commands
-		for _, c := range doc.Commands {
-			command := &lair.Command{
-				Tool:    c.Tool,
-				Command: c.Command,
-			}
-			project.Commands = append(project.Commands, *command)
-		}
+		project.Commands = append(project.Commands, doc.Commands...)
+
 		// Append new notes
-		for _, n := range doc.Notes {
-			note := &lair.Note{
-				Title:          n.Title,
-				Content:        n.Content,
-				LastModifiedBy: n.LastModifiedBy,
-			}
-			project.Notes = append(project.Notes, *note)
-		}
+		project.Notes = append(project.Notes, doc.Notes...)
 
 		// Add owner if necessary
 		if project.Owner == "" {
@@ -126,14 +114,7 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 			}
 
 			// Append all host notes
-			for _, note := range docHost.Notes {
-				note := &lair.Note{
-					Title:          note.Title,
-					Content:        note.Content,
-					LastModifiedBy: note.LastModifiedBy,
-				}
-				host.Notes = append(host.Notes, *note)
-			}
+			host.Notes = append(host.Notes, docHost.Notes...)
 
 			// Add any new hostnames
 			for _, docHostname := range docHost.Hostnames {
@@ -158,7 +139,7 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 					}
 				}
 				if !found {
-					host.OS = append(host.OS, lair.OS{Tool: docOS.Tool, Weight: docOS.Weight, Fingerprint: docOS.Fingerprint})
+					host.OS = append(host.OS, docOS)
 					host.LastModifiedBy = doc.Tool
 				}
 			}
@@ -222,24 +203,10 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 				}
 
 				// Append all port notes
-				for _, note := range docPort.Notes {
-					note := &lair.Note{
-						Title:          note.Title,
-						Content:        note.Content,
-						LastModifiedBy: note.LastModifiedBy,
-					}
-					port.Notes = append(port.Notes, *note)
-				}
+				port.Notes = append(port.Notes, docPort.Notes...)
 
 				// Append all credentials
-				for _, cred := range docPort.Credentials {
-					cred := &lair.Credential{
-						Username: cred.Username,
-						Password: cred.Password,
-						Hash:     cred.Hash,
-					}
-					port.Credentials = append(port.Credentials, *cred)
-				}
+				port.Credentials = append(port.Credentials, docPort.Credentials...)
 
 				if !knownPort {
 					id := bson.NewObjectId().Hex()
@@ -302,21 +269,10 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 				if !server.IsValidStatus(vuln.Status) {
 					vuln.Status = lair.StatusGrey
 				}
-				for _, plugin := range docVuln.PluginIds {
-					vuln.PluginIds = append(vuln.PluginIds, lair.PluginId{Tool: plugin.Tool, Id: plugin.Id})
-				}
-				for _, cve := range docVuln.Cves {
-					vuln.Cves = append(vuln.Cves, cve)
-				}
-				for _, note := range docVuln.Notes {
-					vuln.Notes = append(vuln.Notes, lair.Note{Title: note.Title, Content: note.Content})
-				}
-				for _, hk := range docVuln.Hosts {
-					vuln.Hosts = append(
-						vuln.Hosts,
-						lair.VulnerabilityHost{StringAddr: hk.StringAddr, Port: hk.Port, Protocol: hk.Protocol},
-					)
-				}
+				vuln.PluginIds = docVuln.PluginIds
+				vuln.Cves = docVuln.Cves
+				vuln.Notes = docVuln.Notes
+				vuln.Hosts = docVuln.Hosts
 				msg := fmt.Sprintf(
 					"%s - New vulnerability found: %s",
 					time.Now().String(),
@@ -366,10 +322,7 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 						}
 					}
 					if !found {
-						vuln.Hosts = append(
-							vuln.Hosts,
-							lair.VulnerabilityHost{StringAddr: hk.StringAddr, Port: hk.Port, Protocol: hk.Protocol},
-						)
+						vuln.Hosts = append(vuln.Hosts, hk)
 						vuln.LastModifiedBy = doc.Tool
 						msg := fmt.Sprintf(
 							"%s - %s:%d/%s - New vulnerability found: %s",
@@ -392,23 +345,13 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 						}
 					}
 					if !found {
-						vuln.PluginIds = append(
-							vuln.PluginIds,
-							lair.PluginId{Tool: docPlugin.Tool, Id: docPlugin.Id},
-						)
+						vuln.PluginIds = append(vuln.PluginIds, docPlugin)
 						vuln.LastModifiedBy = doc.Tool
 					}
 				}
 
 				// Append notes
-				for _, n := range docVuln.Notes {
-					note := &lair.Note{
-						Title:          n.Title,
-						Content:        n.Content,
-						LastModifiedBy: n.LastModifiedBy,
-					}
-					vuln.Notes = append(vuln.Notes, *note)
-				}
+				vuln.Notes = append(vuln.Notes, docVuln.Notes...)
 
 				// Add any new 'Identified By' info
 				found := false
