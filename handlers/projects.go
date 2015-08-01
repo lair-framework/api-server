@@ -537,7 +537,7 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 				issue.IsConfirmed = docIssue.IsConfirmed
 				issue.IsFlagged = docIssue.IsFlagged
 				issue.LastModifiedBy = doc.Tool
-				issue.IdentifiedBy = []string{doc.Tool}
+				issue.IdentifiedBy = []lair.IdentifiedBy{lair.IdentifiedBy{Tool: doc.Tool}}
 				issue.Status = docIssue.Status
 				issue.Files = append(issue.Files, docIssue.Files...)
 				if !server.IsValidStatus(issue.Status) {
@@ -650,12 +650,12 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 				// Add any new 'Identified By' info
 				found := false
 				for _, idBy := range issue.IdentifiedBy {
-					if idBy == doc.Tool {
+					if idBy.Tool == doc.Tool {
 						found = true
 					}
 				}
 				if !found {
-					issue.IdentifiedBy = append(issue.IdentifiedBy, doc.Tool)
+					issue.IdentifiedBy = append(issue.IdentifiedBy, lair.IdentifiedBy{Tool: doc.Tool})
 					issue.LastModifiedBy = doc.Tool
 				}
 
