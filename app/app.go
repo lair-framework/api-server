@@ -5,6 +5,7 @@ import (
 	"github.com/unrolled/render"
 )
 
+// App is used to map global variables used in handlers.
 type App struct {
 	R       *render.Render
 	C       C
@@ -12,11 +13,13 @@ type App struct {
 	History int
 }
 
+// Response is used to return a status and message to handler requests.
 type Response struct {
 	Status  string
 	Message string
 }
 
+// C is used to map collection names.
 type C struct {
 	AuthInterfaces string
 	Credentials    string
@@ -31,10 +34,12 @@ type C struct {
 	WebDirectories string
 }
 
+// IsValidStatus returns true if the provided string is a valid lair status.
 func (a *App) IsValidStatus(status string) bool {
 	return status == lair.StatusGrey || status == lair.StatusBlue || status == lair.StatusGreen || status == lair.StatusOrange || status == lair.StatusRed
 }
 
+// New returns App with defaults.
 func New() *App {
 	a := &App{
 		R: render.New(),
