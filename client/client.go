@@ -41,7 +41,7 @@ func client() *http.Client {
 // Sends HTTP request to Lair API Server to import a project
 func ImportProject(target *LairTarget, project *lair.Project) (*http.Response, error) {
 	client := client()
-	resource := fmt.Sprintf(importuri, project.Id)
+	resource := fmt.Sprintf(importuri, project.ID)
 	reqUrl := &url.URL{Host: target.Host, Path: resource, Scheme: "https"}
 
 	body, err := json.Marshal(project)

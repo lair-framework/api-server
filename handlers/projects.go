@@ -19,6 +19,22 @@ import (
 	"gopkg.in/mgo.v2/bson"
 )
 
+const (
+	MAX_PORTS = 1000 // The maximum number of ports allowable for a single host without ForcePorts enabled
+)
+
+// Return the status as a string based off the cvss value
+func calcRating(cvss float64) string {
+	switch {
+	case cvss >= 7:
+		return "high"
+	case cvss >= 4:
+		return "medium"
+	default:
+		return "low"
+	}
+}
+
 // Add/update a project using additive, smart merge
 func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
@@ -39,6 +55,14 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 			return
 		}
 
+		forcePorts := false
+		// Read 'force-ports' URL parameter
+		vars := mux.Vars(req)
+		forcePortsStr := vars["force-ports"]
+		if forcePortsStr == "true" {
+			forcePorts = true
+		}
+
 		// Start of import
 
 		// Validate versions
@@ -49,15 +73,15 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 		}
 
 		// Validate required fields
-		if doc.Id == "" || doc.Commands == nil || len(doc.Commands) <= 0 {
+		if doc.ID == "" || doc.Commands == nil || len(doc.Commands) <= 0 {
 			server.R.JSON(w, http.StatusInternalServerError, &app.Response{Status: "Error", Message: "Missing required field or invalid format"})
 			return
 		}
 
 		// Lookup project
 		var project lair.Project
-		pid := doc.Id
-		if err := db.C(server.C.Projects).FindId(doc.Id).One(&project); err != nil {
+		pid := doc.ID
+		if err := db.C(server.C.Projects).FindId(doc.ID).One(&project); err != nil {
 			server.R.JSON(w, http.StatusInternalServerError, &app.Response{Status: "Error", Message: "Invalid project id"})
 			return
 		}
@@ -79,8 +103,8 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 		}
 
 		// Add creation date if necessary
-		if project.CreationDate == "" {
-			project.CreationDate = doc.CreationDate
+		if project.CreatedAt == "" {
+			project.CreatedAt = doc.CreatedAt
 		}
 
 		// Add description if necessary
@@ -88,16 +112,184 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 			project.Description = doc.Description
 		}
 
-		// Ensure indexes
-		db.C(server.C.Hosts).EnsureIndexKey("project_id", "string_addr")
-		db.C(server.C.Ports).EnsureIndexKey("project_id", "host_id", "port", "protocol")
-		db.C(server.C.Vulnerabilities).EnsureIndexKey("project_id", "plugin_ids")
+		// Used for tracking any hosts that were skipped for exceeding MAX_PORTS limit
+		skippedHosts := map[string]bool{}
 
+		// Ensure indexes
+		db.C(server.C.Hosts).EnsureIndexKey("projectId", "ipv4")
+		db.C(server.C.Services).EnsureIndexKey("projectId", "hostId", "port", "protocol")
+		db.C(server.C.Issues).EnsureIndexKey("projectId", "pluginIds")
+		db.C(server.C.WebDirectories).EnsureIndexKey("projectId", "hostId", "path", "port")
+
+		// Insert auth interfaces
+		for _, docAI := range doc.AuthInterfaces {
+			ai := &lair.AuthInterface{
+				ProjectID:     pid,
+				IsMultifactor: docAI.IsMultifactor,
+				Kind:          docAI.Kind,
+				URL:           docAI.URL,
+				Description:   docAI.Description,
+			}
+			db.C(server.C.AuthInterfaces).Insert(ai)
+		}
+
+		// Insert credentials
+		for _, docCred := range doc.Credentials {
+			cred := &lair.Credential{
+				ProjectID: pid,
+				Username:  docCred.Username,
+				Password:  docCred.Password,
+				Format:    docCred.Format,
+				Hash:      docCred.Hash,
+				Host:      docCred.Host,
+				Service:   docCred.Service,
+			}
+			db.C(server.C.Credentials).Insert(cred)
+		}
+
+		// Insert People
+		for _, docPerson := range doc.People {
+			person := &lair.Person{
+				ProjectID:         pid,
+				PrincipalName:     docPerson.PrincipalName,
+				SAMAccountName:    docPerson.SAMAccountName,
+				DistinguishedName: docPerson.DistinguishedName,
+				FirstName:         docPerson.FirstName,
+				MiddleName:        docPerson.MiddleName,
+				LastName:          docPerson.LastName,
+				DisplayName:       docPerson.DisplayName,
+				Department:        docPerson.Department,
+				Description:       docPerson.Description,
+				Address:           docPerson.Address,
+				Emails:            docPerson.Emails,
+				Phones:            docPerson.Phones,
+				References:        docPerson.References,
+				Groups:            docPerson.Groups,
+				LastLogon:         docPerson.LastLogon,
+				LastLogoff:        docPerson.LastLogoff,
+				LoggedIn:          docPerson.LoggedIn,
+			}
+			db.C(server.C.People).Insert(person)
+		}
+
+		// Insert netblocks
+		for _, docNetblock := range doc.Netblocks {
+			netblock := &lair.Netblock{}
+			knownNetblock := true
+			// Determine if the netblock is already in database
+			m := bson.M{"projectId": pid, "cidr": docNetblock.CIDR}
+			if err := db.C(server.C.Netblocks).Find(m).One(&netblock); err != nil {
+				knownNetblock = false
+			}
+
+			// Used for checking if the netblock has changed during import
+			data := []byte(fmt.Sprintf("%+v", netblock))
+			preMD5 := fmt.Sprintf("%x", md5.Sum(data))
+
+			netblock.ProjectID = pid
+			netblock.CIDR = docNetblock.CIDR
+
+			if netblock.ASN == "" {
+				netblock.ASN = docNetblock.ASN
+			}
+
+			if netblock.ASNCountryCode == "" {
+				netblock.ASNCountryCode = docNetblock.ASNCountryCode
+			}
+
+			if netblock.ASNCIDR == "" {
+				netblock.ASNCIDR = docNetblock.ASNCIDR
+			}
+
+			if netblock.ASNDate == "" {
+				netblock.ASNDate = docNetblock.ASNDate
+			}
+
+			if netblock.ASNRegistry == "" {
+				netblock.ASNRegistry = docNetblock.ASNRegistry
+			}
+
+			if netblock.AbuseEmails == "" {
+				netblock.AbuseEmails = docNetblock.AbuseEmails
+			}
+
+			if netblock.MiscEmails == "" {
+				netblock.MiscEmails = docNetblock.MiscEmails
+			}
+
+			if netblock.TechEmails == "" {
+				netblock.TechEmails = docNetblock.TechEmails
+			}
+
+			if netblock.Name == "" {
+				netblock.Name = docNetblock.Name
+			}
+
+			if netblock.City == "" {
+				netblock.City = docNetblock.City
+			}
+
+			if netblock.Country == "" {
+				netblock.Country = docNetblock.Country
+			}
+
+			if netblock.PostalCode == "" {
+				netblock.PostalCode = docNetblock.PostalCode
+			}
+
+			if netblock.Created == "" {
+				netblock.Created = docNetblock.Created
+			}
+
+			if netblock.Updated == "" {
+				netblock.Updated = docNetblock.Updated
+			}
+
+			if netblock.Description == "" {
+				netblock.Description = docNetblock.Description
+			}
+
+			if netblock.Handle == "" {
+				netblock.Handle = docNetblock.Handle
+			}
+
+			if !knownNetblock {
+				msg := fmt.Sprintf("%s - New netblock found: %s", time.Now().String(), docNetblock.CIDR)
+				project.DroneLog = append(project.DroneLog, msg)
+			}
+
+			data = []byte(fmt.Sprintf("%+v", netblock))
+			postMD5 := fmt.Sprintf("%x", md5.Sum(data))
+
+			// Check if host was changed
+			if preMD5 != postMD5 {
+				if !knownNetblock {
+					id := bson.NewObjectId().Hex()
+					netblock.ID = id
+				}
+
+				// Upsert changes
+				db.C(server.C.Netblocks).UpsertId(netblock.ID, netblock)
+			}
+		}
+
+		// Procss the hosts
 		for _, docHost := range doc.Hosts {
+			if len(docHost.Services) > MAX_PORTS && !forcePorts {
+				// Host exceeds max number of allowable ports. Skip it.
+				skippedHosts[docHost.IPv4] = true
+				msg := fmt.Sprintf(
+					"%s - Host skipped. Exceeded maximum number of ports: %s",
+					time.Now().String(),
+					docHost.IPv4,
+				)
+				project.DroneLog = append(project.DroneLog, msg)
+				continue
+			}
 			host := &lair.Host{}
 			knownHost := true
 			// Determine if the host is already in database
-			m := bson.M{"project_id": pid, "string_addr": docHost.StringAddr}
+			m := bson.M{"projectId": pid, "ipv4": docHost.IPv4}
 			if err := db.C(server.C.Hosts).Find(m).One(&host); err != nil {
 				knownHost = false
 			}
@@ -107,17 +299,32 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 			preMD5 := fmt.Sprintf("%x", md5.Sum(data))
 
 			// Initialize basic host info
-			host.ProjectId = pid
-			host.Alive = docHost.Alive
-			host.StringAddr = docHost.StringAddr
-			host.LongAddr = ip.IpToInt(net.ParseIP(host.StringAddr))
+			host.ProjectID = pid
+			host.IPv4 = docHost.IPv4
+			host.LongIPv4Addr = ip.IpToInt(net.ParseIP(host.IPv4))
 
-			if host.MacAddr == "" {
-				host.MacAddr = docHost.MacAddr
+			if host.MAC == "" {
+				host.MAC = docHost.MAC
 			}
 
 			// Append all host notes
 			host.Notes = append(host.Notes, docHost.Notes...)
+
+			// Add any new files
+			for idx, docFile := range docHost.Files {
+				knownFile := false
+				for k, f := range host.Files {
+					if docFile.FileName == f.FileName {
+						// File exists, update URL
+						knownFile = true
+						host.Files[k].URL = docFile.URL
+						break
+					}
+				}
+				if !knownFile {
+					host.Files = append(host.Files, docHost.Files[idx])
+				}
+			}
 
 			// Add any new hostnames
 			for _, docHostname := range docHost.Hostnames {
@@ -133,18 +340,10 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 				}
 			}
 
-			// Add any new OSes
-			for _, docOS := range docHost.OS {
-				found := false
-				for _, dbOS := range host.OS {
-					if dbOS.Tool == docOS.Tool && dbOS.Fingerprint == docOS.Fingerprint {
-						found = true
-					}
-				}
-				if !found {
-					host.OS = append(host.OS, docOS)
-					host.LastModifiedBy = doc.Tool
-				}
+			// Add any new OS
+			if host.OS.Weight < docHost.OS.Weight {
+				host.OS = docHost.OS
+				host.LastModifiedBy = doc.Tool
 			}
 
 			data = []byte(fmt.Sprintf("%+v", host))
@@ -155,7 +354,7 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 				host.LastModifiedBy = doc.Tool
 				if !knownHost {
 					id := bson.NewObjectId().Hex()
-					host.Id = id
+					host.ID = id
 					host.Status = docHost.Status
 					if !server.IsValidStatus(docHost.Status) {
 						host.Status = lair.StatusGrey
@@ -163,229 +362,302 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 				}
 
 				// Upsert changes
-				db.C(server.C.Hosts).UpsertId(host.Id, host)
+				db.C(server.C.Hosts).UpsertId(host.ID, host)
 
 			}
 
 			if !knownHost {
-				msg := fmt.Sprintf("%s - New host found: %s", time.Now().String(), docHost.StringAddr)
+				msg := fmt.Sprintf("%s - New host found: %s", time.Now().String(), docHost.IPv4)
 				project.DroneLog = append(project.DroneLog, msg)
 			}
 
-			for _, docPort := range docHost.Ports {
+			// Process web directories
+			for _, docDir := range docHost.WebDirectories {
+				m := bson.M{
+					"projectId": pid,
+					"hostId":    host.ID,
+					"path":      docDir.Path,
+					"port":      docDir.Port,
+				}
+				// Determine if the web directory is already in database
+				webDir := &lair.WebDirectory{}
+				if err := db.C(server.C.WebDirectories).Find(m).One(&webDir); err != nil {
+					// Web directory doesn't exist, create a new one
+					webDir.ID = bson.NewObjectId().Hex()
+					webDir.ProjectID = pid
+					webDir.HostID = host.ID
+					webDir.Path = docDir.Path
+					webDir.Port = docDir.Port
+					webDir.ResponseCode = docDir.ResponseCode
+					webDir.LastModifiedBy = docDir.LastModifiedBy
+					webDir.IsFlagged = docDir.IsFlagged
+				} else {
+					// Web directory exists in database, update relevant fields
+					webDir.ResponseCode = docDir.ResponseCode
+					webDir.LastModifiedBy = docDir.LastModifiedBy
+					webDir.IsFlagged = docDir.IsFlagged
+				}
+
+				// Upsert changes
+				db.C(server.C.WebDirectories).UpsertId(webDir.ID, webDir)
+			}
+
+			for _, docService := range docHost.Services {
 
 				m := bson.M{
-					"project_id": pid,
-					"host_id":    host.Id,
-					"port":       docPort.Port,
-					"protocol":   docPort.Protocol,
+					"projectId": pid,
+					"hostId":    host.ID,
+					"port":      docService.Port,
+					"protocol":  docService.Protocol,
 				}
 				// Determine if the host is already in database
-				port := &lair.Port{}
+				service := &lair.Service{}
 				knownPort := true
-				if err := db.C(server.C.Ports).Find(m).One(&port); err != nil {
+				if err := db.C(server.C.Services).Find(m).One(&service); err != nil {
 					knownPort = false
 				}
 
-				// Used for tracking if changes were made to port
-				data = []byte(fmt.Sprintf("%+v", port))
+				// Used for tracking if changes were made to service
+				data = []byte(fmt.Sprintf("%+v", service))
 				preMD5 := fmt.Sprintf("%x", md5.Sum(data))
 
-				port.HostId = host.Id
-				port.ProjectId = pid
-				port.Protocol = docPort.Protocol
-				port.Port = docPort.Port
-				port.Alive = docPort.Alive
+				service.HostID = host.ID
+				service.ProjectID = pid
+				service.Protocol = docService.Protocol
+				service.Port = docService.Port
 
-				if port.Product == "" || port.Product == "unknown" {
-					port.Product = docPort.Product
+				if service.Product == "" || service.Product == "Unknown" {
+					service.Product = docService.Product
 				}
 
-				if port.Service == "" || port.Service == "unknown" {
-					port.Service = docPort.Service
+				if service.Service == "" || service.Service == "Unknown" {
+					service.Service = docService.Service
 				}
 
-				// Append all port notes
-				port.Notes = append(port.Notes, docPort.Notes...)
+				// Append all service notes
+				service.Notes = append(service.Notes, docService.Notes...)
 
-				// Append all credentials
-				port.Credentials = append(port.Credentials, docPort.Credentials...)
+				// Add any new files
+				for idx, docFile := range docService.Files {
+					knownFile := false
+					for k, f := range service.Files {
+						if docFile.FileName == f.FileName {
+							// File exists, update URL
+							knownFile = true
+							service.Files[k].URL = docFile.URL
+							break
+						}
+					}
+					if !knownFile {
+						service.Files = append(service.Files, docService.Files[idx])
+					}
+				}
 
 				if !knownPort {
 					id := bson.NewObjectId().Hex()
-					port.Id = id
-					port.Status = docPort.Status
-					if !server.IsValidStatus(port.Status) {
-						port.Status = lair.StatusGrey
+					service.ID = id
+					service.Status = docService.Status
+					if !server.IsValidStatus(service.Status) {
+						service.Status = lair.StatusGrey
 					}
 					msg := fmt.Sprintf(
-						"%s - New port found: %d/%s (%s)",
+						"%s - New service found: %d/%s (%s)",
 						time.Now().String(),
-						docPort.Port,
-						docPort.Protocol,
-						docPort.Service,
+						docService.Port,
+						docService.Protocol,
+						docService.Service,
 					)
 					project.DroneLog = append(project.DroneLog, msg)
 				}
 
-				// Used for tracking if changes were made to port
-				data = []byte(fmt.Sprintf("%+v", port))
+				// Used for tracking if changes were made to service
+				data = []byte(fmt.Sprintf("%+v", service))
 				postMD5 = fmt.Sprintf("%x", md5.Sum(data))
 
 				// Upsert any changes
 				if preMD5 != postMD5 {
-					port.LastModifiedBy = doc.Tool
-					db.C(server.C.Ports).UpsertId(port.Id, port)
+					service.LastModifiedBy = doc.Tool
+					db.C(server.C.Services).UpsertId(service.ID, service)
 				}
 			}
 		}
 
-		for _, docVuln := range doc.Vulnerabilities {
+		for _, docIssue := range doc.Issues {
 			pluginM := bson.M{
-				"$all": docVuln.PluginIds,
+				"$all": docIssue.PluginIDs,
 			}
 			m := bson.M{
 				"project_id": pid,
 				"plugin_ids": pluginM,
 			}
 			// Check if vulnerability already exists
-			vuln := &lair.Vulnerability{}
-			knownVuln := true
-			if err := db.C(server.C.Vulnerabilities).Find(m).One(&vuln); err != nil {
-				knownVuln = false
+			issue := &lair.Issue{}
+			knownIssue := true
+			if err := db.C(server.C.Issues).Find(m).One(&issue); err != nil {
+				knownIssue = false
 			}
 
-			if !knownVuln {
-				id := bson.NewObjectId().Hex()
-				vuln.Id = id
-				vuln.ProjectId = pid
-				vuln.Title = docVuln.Title
-				vuln.Description = docVuln.Description
-				vuln.Solution = docVuln.Solution
-				vuln.Evidence = docVuln.Evidence
-				vuln.Cvss = docVuln.Cvss
-				vuln.Confirmed = docVuln.Confirmed
-				vuln.Flag = docVuln.Flag
-				vuln.LastModifiedBy = doc.Tool
-				vuln.IdentifiedBy = []string{doc.Tool}
-				vuln.Status = docVuln.Status
-				if !server.IsValidStatus(vuln.Status) {
-					vuln.Status = lair.StatusGrey
+			if !knownIssue {
+				hostList := []lair.IssueHost{}
+				// Build a list of hosts NOT marked as 'skipped' meaning they didn't exceed
+				// port count limit.
+				for idx, host := range docIssue.Hosts {
+					if _, skipped := skippedHosts[host.IPv4]; !skipped {
+						hostList = append(hostList, docIssue.Hosts[idx])
+					}
 				}
-				vuln.PluginIds = docVuln.PluginIds
-				vuln.Cves = docVuln.Cves
-				vuln.Notes = docVuln.Notes
-				vuln.Hosts = docVuln.Hosts
+				id := bson.NewObjectId().Hex()
+				issue.ID = id
+				issue.ProjectID = pid
+				issue.Title = docIssue.Title
+				issue.Description = docIssue.Description
+				issue.Solution = docIssue.Solution
+				issue.Evidence = docIssue.Evidence
+				issue.CVSS = docIssue.CVSS
+				issue.Rating = calcRating(issue.CVSS)
+				issue.IsConfirmed = docIssue.IsConfirmed
+				issue.IsFlagged = docIssue.IsFlagged
+				issue.LastModifiedBy = doc.Tool
+				issue.IdentifiedBy = []string{doc.Tool}
+				issue.Status = docIssue.Status
+				issue.Files = append(issue.Files, docIssue.Files...)
+				if !server.IsValidStatus(issue.Status) {
+					issue.Status = lair.StatusGrey
+				}
+				issue.PluginIDs = docIssue.PluginIDs
+				issue.CVEs = docIssue.CVEs
+				issue.Notes = docIssue.Notes
+				issue.Hosts = hostList
 				msg := fmt.Sprintf(
-					"%s - New vulnerability found: %s",
+					"%s - New issue found: %s",
 					time.Now().String(),
-					docVuln.Title,
+					docIssue.Title,
 				)
 				project.DroneLog = append(project.DroneLog, msg)
 
 				// Insert new vulnerability
-				if err := db.C(server.C.Vulnerabilities).Insert(vuln); err != nil {
-					// TODO: How to handle failed vuln insert?
+				if err := db.C(server.C.Issues).Insert(issue); err != nil {
+					// TODO: How to handle failed issue insert?
 				}
 			}
 
-			if knownVuln {
+			if knownIssue {
 
-				// Used for tracking if changes were made to vulnerability
-				data := []byte(fmt.Sprintf("%+v", vuln))
+				// Used for tracking if changes were made to issueerability
+				data := []byte(fmt.Sprintf("%+v", issue))
 				preMD5 := fmt.Sprintf("%x", md5.Sum(data))
 
-				vuln.Title = docVuln.Title
-				vuln.Description = docVuln.Description
-				vuln.Solution = docVuln.Solution
-				if vuln.Evidence != docVuln.Evidence {
-					vuln.Evidence = vuln.Evidence + "\n\n" + docVuln.Evidence
+				issue.Title = docIssue.Title
+				issue.Description = docIssue.Description
+				issue.Solution = docIssue.Solution
+				if issue.Evidence != docIssue.Evidence {
+					issue.Evidence = issue.Evidence + "\n\n" + docIssue.Evidence
 				}
 
 				// Add any new CVEs
-				for _, docCVE := range docVuln.Cves {
+				for _, docCVE := range docIssue.CVEs {
 					found := false
-					for _, dbCVE := range vuln.Cves {
+					for _, dbCVE := range issue.CVEs {
 						if dbCVE == docCVE {
 							found = true
 						}
 					}
 					if !found {
-						vuln.Cves = append(vuln.Cves, docCVE)
-						vuln.LastModifiedBy = doc.Tool
+						issue.CVEs = append(issue.CVEs, docCVE)
+						issue.LastModifiedBy = doc.Tool
+					}
+				}
+
+				// Add any new files
+				for idx, docFile := range docIssue.Files {
+					knownFile := false
+					for k, f := range issue.Files {
+						if docFile.FileName == f.FileName {
+							// File exists, update URL
+							knownFile = true
+							issue.Files[k].URL = docFile.URL
+							break
+						}
+					}
+					if !knownFile {
+						issue.Files = append(issue.Files, docIssue.Files[idx])
 					}
 				}
 
 				// Add any new hosts
-				for _, hk := range docVuln.Hosts {
+				for _, hk := range docIssue.Hosts {
+					if _, skipped := skippedHosts[hk.IPv4]; skipped {
+						// Host is marked as skipped, meaning it exceeded port limit. Do not process it.
+						continue
+					}
 					found := false
-					for _, dbHk := range vuln.Hosts {
-						if dbHk.StringAddr == hk.StringAddr && dbHk.Port == hk.Port && dbHk.Protocol == hk.Protocol {
+					for _, dbHk := range issue.Hosts {
+						if dbHk.IPv4 == hk.IPv4 && dbHk.Port == hk.Port && dbHk.Protocol == hk.Protocol {
 							found = true
 						}
 					}
 					if !found {
-						vuln.Hosts = append(vuln.Hosts, hk)
-						vuln.LastModifiedBy = doc.Tool
+						issue.Hosts = append(issue.Hosts, hk)
+						issue.LastModifiedBy = doc.Tool
 						msg := fmt.Sprintf(
-							"%s - %s:%d/%s - New vulnerability found: %s",
+							"%s - %s:%d/%s - New issue found: %s",
 							time.Now().String(),
-							hk.StringAddr,
+							hk.IPv4,
 							hk.Port,
 							hk.Protocol,
-							docVuln.Title,
+							docIssue.Title,
 						)
 						project.DroneLog = append(project.DroneLog, msg)
 					}
 				}
 
 				// Add any new plugins
-				for _, docPlugin := range docVuln.PluginIds {
+				for _, docPlugin := range docIssue.PluginIDs {
 					found := false
-					for _, dbPlugin := range vuln.PluginIds {
-						if dbPlugin.Tool == docPlugin.Tool && dbPlugin.Id == docPlugin.Id {
+					for _, dbPlugin := range issue.PluginIDs {
+						if dbPlugin.Tool == docPlugin.Tool && dbPlugin.ID == docPlugin.ID {
 							found = true
 						}
 					}
 					if !found {
-						vuln.PluginIds = append(vuln.PluginIds, docPlugin)
-						vuln.LastModifiedBy = doc.Tool
+						issue.PluginIDs = append(issue.PluginIDs, docPlugin)
+						issue.LastModifiedBy = doc.Tool
 					}
 				}
 
 				// Append notes
-				vuln.Notes = append(vuln.Notes, docVuln.Notes...)
+				issue.Notes = append(issue.Notes, docIssue.Notes...)
 
 				// Add any new 'Identified By' info
 				found := false
-				for _, idBy := range vuln.IdentifiedBy {
+				for _, idBy := range issue.IdentifiedBy {
 					if idBy == doc.Tool {
 						found = true
 					}
 				}
 				if !found {
-					vuln.IdentifiedBy = append(vuln.IdentifiedBy, doc.Tool)
-					vuln.LastModifiedBy = doc.Tool
+					issue.IdentifiedBy = append(issue.IdentifiedBy, doc.Tool)
+					issue.LastModifiedBy = doc.Tool
 				}
 
 				// Only set flag to 'true', don't unset it
-				if docVuln.Flag {
-					vuln.Flag = true
+				if docIssue.IsFlagged {
+					issue.IsFlagged = true
 				}
 
 				// Only set confirmed to 'true', don't unset it
-				if docVuln.Confirmed {
-					vuln.Confirmed = true
+				if docIssue.IsConfirmed {
+					issue.IsConfirmed = true
 				}
 
-				// Check if vuln data was changed
-				data = []byte(fmt.Sprintf("%+v", vuln))
+				// Check if issue data was changed
+				data = []byte(fmt.Sprintf("%+v", issue))
 				postMD5 := fmt.Sprintf("%x", md5.Sum(data))
 
 				if preMD5 != postMD5 {
 					// Upsert changes
-					vuln.LastModifiedBy = doc.Tool
-					db.C(server.C.Vulnerabilities).UpsertId(vuln.Id, vuln)
+					issue.LastModifiedBy = doc.Tool
+					db.C(server.C.Issues).UpsertId(issue.ID, issue)
 				}
 			}
 		}
@@ -396,7 +668,7 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 		}
 
 		// Update project
-		db.C(server.C.Projects).UpdateId(project.Id, project)
+		db.C(server.C.Projects).UpdateId(project.ID, project)
 
 		// End of import
 

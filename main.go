@@ -27,14 +27,6 @@ func main() {
 		log.Fatal("MOGNO_URL environment variable not set")
 
 	}
-	keyPath := os.Getenv("KEY_PATH")
-	if keyPath == "" {
-		log.Fatal("KEY_PATH environment variable not set")
-	}
-	certPath := os.Getenv("CERT_PATH")
-	if certPath == "" {
-		log.Fatal("CERT_PATH environment variable not set")
-	}
 	apiListener := os.Getenv("API_LISTENER")
 	if apiListener == "" {
 		log.Fatal("API_LISTENER environment variable not set")
@@ -107,5 +99,5 @@ func main() {
 	)
 	server.UseHandler(router)
 
-	log.Fatal(http.ListenAndServeTLS(apiListener, certPath, keyPath, server))
+	log.Fatal(http.ListenAndServe(apiListener, server))
 }

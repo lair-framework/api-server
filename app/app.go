@@ -18,11 +18,17 @@ type Response struct {
 }
 
 type C struct {
-	Projects        string
-	Versions        string
-	Hosts           string
-	Ports           string
-	Vulnerabilities string
+	AuthInterfaces string
+	Credentials    string
+	Files          string
+	Hosts          string
+	Issues         string
+	Netblocks      string
+	People         string
+	Projects       string
+	Services       string
+	Versions       string
+	WebDirectories string
 }
 
 func (a *App) IsValidStatus(status string) bool {
@@ -33,13 +39,19 @@ func New() *App {
 	a := &App{
 		R: render.New(),
 		C: C{
-			Projects:        "projects",
-			Versions:        "versions",
-			Hosts:           "hosts",
-			Ports:           "ports",
-			Vulnerabilities: "vulnerabilities",
+			AuthInterfaces: "auth_interfaces",
+			Credentials:    "credentials",
+			Files:          "files",
+			Hosts:          "hosts",
+			Issues:         "issues",
+			Netblocks:      "netblocks",
+			People:         "people",
+			Projects:       "projects",
+			Services:       "services",
+			Versions:       "versions",
+			WebDirectories: "web_directories",
 		},
-		Version: "0.1.0",
+		Version: "2",
 		History: 500,
 	}
 	return a
