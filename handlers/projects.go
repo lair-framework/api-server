@@ -40,6 +40,9 @@ func removeDuplicates(in []string) []string {
 	m := map[string]bool{}
 	out := []string{}
 	for _, i := range in {
+		if i == "" {
+			continue
+		}
 		if _, ok := m[i]; ok {
 			continue
 		}
