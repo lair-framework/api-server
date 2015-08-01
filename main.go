@@ -77,27 +77,18 @@ func main() {
 
 	a := app.New()
 
-	importRouter := mux.NewRouter()
-	importRouter.HandleFunc("/api/projects/{pid}", handlers.UpdateProject(a)).Methods("PATCH")
-	importRouter.HandleFunc("/api/projects/{pid}", handlers.ShowProject(a)).Methods("GET")
-	importRouter.HandleFunc("/api/projects", handlers.IndexProject(a)).Methods("GET")
+	api := mux.NewRouter()
+	api.HandleFunc("/api/projects/{pid}", handlers.UpdateProject(a)).Methods("PATCH")
+	api.HandleFunc("/api/projects/{pid}", handlers.ShowProject(a)).Methods("GET")
+	api.HandleFunc("/api/projects", handlers.IndexProject(a)).Methods("GET")
 
-	negImport := negroni.New(
+	n := negroni.New(
 		negroni.NewLogger(),
 		negroni.NewRecovery(),
 	)
-	negImport.Use(middleware.MongoMiddleware(s, dname))
-	negImport.Use(middleware.AuthMiddleware(a))
-	negImport.UseHandler(importRouter)
+	n.Use(middleware.MongoMiddleware(s, dname))
+	n.Use(middleware.AuthMiddleware(a))
+	n.UseHandler(api)
 
-	router := mux.NewRouter()
-	router.Handle("/api/projects/{pid}", negImport)
-	router.Handle("/api/projects", negImport)
-	server := negroni.New(
-		negroni.NewLogger(),
-		negroni.NewRecovery(),
-	)
-	server.UseHandler(router)
-
-	log.Fatal(http.ListenAndServe(apiListener, server))
+	log.Fatal(http.ListenAndServe(apiListener, n))
 }
