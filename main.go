@@ -24,7 +24,7 @@ func TLSDial(addr net.Addr) (net.Conn, error) {
 func main() {
 	murl := os.Getenv("MONGO_URL")
 	if murl == "" {
-		log.Fatal("MOGNO_URL environment variable not set")
+		log.Fatal("MONGO_URL environment variable not set")
 
 	}
 	apiListener := os.Getenv("API_LISTENER")
