@@ -20,7 +20,8 @@ import (
 )
 
 const (
-	MAX_PORTS = 1000 // The maximum number of ports allowable for a single host without ForcePorts enabled
+	// MAXPORTS is the maximum number of ports allowable for a single host without ForcePorts enabled.
+	MAXPORTS = 1000
 )
 
 // Return the status as a string based off the cvss value
@@ -35,7 +36,20 @@ func calcRating(cvss float64) string {
 	}
 }
 
-// Add/update a project using additive, smart merge
+func removeDuplicates(in []string) []string {
+	m := map[string]bool{}
+	out := []string{}
+	for _, i := range in {
+		if _, ok := m[i]; ok {
+			continue
+		}
+		m[i] = true
+		out = append(out, i)
+	}
+	return out
+}
+
+// UpdateProject is an HTTP handler to add/update a project using additive, smart merge
 func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
 		body, err := ioutil.ReadAll(req.Body)
@@ -112,7 +126,7 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 			project.Description = doc.Description
 		}
 
-		// Used for tracking any hosts that were skipped for exceeding MAX_PORTS limit
+		// Used for tracking any hosts that were skipped for exceeding MAXPORTS limit
 		skippedHosts := map[string]bool{}
 
 		// Ensure indexes
@@ -275,7 +289,7 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 
 		// Procss the hosts
 		for _, docHost := range doc.Hosts {
-			if len(docHost.Services) > MAX_PORTS && !forcePorts {
+			if len(docHost.Services) > MAXPORTS && !forcePorts {
 				// Host exceeds max number of allowable ports. Skip it.
 				skippedHosts[docHost.IPv4] = true
 				msg := fmt.Sprintf(
@@ -309,6 +323,8 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 
 			// Append all host notes
 			host.Notes = append(host.Notes, docHost.Notes...)
+			// Append all tags
+			host.Tags = removeDuplicates(append(host.Tags, docHost.Tags...))
 
 			// Add any new files
 			for idx, docFile := range docHost.Files {
@@ -676,7 +692,7 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 	}
 }
 
-// Retrieve a single project
+// ShowProject is an HTTP handler to retrieve a single project.
 func ShowProject(server *app.App) func(w http.ResponseWriter, req *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
 		db := context.Get(req, "db").(*mgo.Database)
@@ -684,7 +700,6 @@ func ShowProject(server *app.App) func(w http.ResponseWriter, req *http.Request)
 			server.R.JSON(w, http.StatusInternalServerError, &app.Response{Status: "Error", Message: "Unable to access database"})
 			return
 		}
-
 		vars := mux.Vars(req)
 		pid := vars["pid"]
 		project := &lair.Project{}
@@ -692,12 +707,11 @@ func ShowProject(server *app.App) func(w http.ResponseWriter, req *http.Request)
 			server.R.JSON(w, http.StatusInternalServerError, &app.Response{Status: "Error", Message: "Unable to retrieve project or project does not exist"})
 			return
 		}
-
 		server.R.JSON(w, http.StatusOK, project)
 	}
 }
 
-// Retrieve a list of all projects that a user owns or is a contributor for
+// IndexProject is an HTTP handler to retrieve a list of all projects that a user owns or is a contributor for.
 func IndexProject(server *app.App) func(w http.ResponseWriter, req *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
 		db := context.Get(req, "db").(*mgo.Database)
