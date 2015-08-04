@@ -91,7 +91,7 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 
 		// Validate required fields
 		if doc.ID == "" || doc.Commands == nil || len(doc.Commands) <= 0 {
-			server.R.JSON(w, http.StatusInternalServerError, &app.Response{Status: "Error", Message: "Missing required field or invalid format"})
+			server.R.JSON(w, http.StatusBadRequest, &app.Response{Status: "Error", Message: "Missing required field or invalid format"})
 			return
 		}
 
