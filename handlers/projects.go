@@ -99,7 +99,7 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 		var project lair.Project
 		pid := doc.ID
 		if err := db.C(server.C.Projects).FindId(doc.ID).One(&project); err != nil {
-			server.R.JSON(w, http.StatusInternalServerError, &app.Response{Status: "Error", Message: "Invalid project id"})
+			server.R.JSON(w, http.StatusNotFound, &app.Response{Status: "Error", Message: "Invalid project id"})
 			return
 		}
 
