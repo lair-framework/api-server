@@ -42,7 +42,6 @@ func main() {
 	}
 	dname := u.Path[1:]
 	s := &mgo.Session{}
-	log.Printf("Attempting to connect to database %s%s\n", u.Host, u.Path)
 	if opt, ok := q["ssl"]; ok && opt[0] == "true" {
 		var user, pass string
 		if u.User != nil {
@@ -71,24 +70,23 @@ func main() {
 			log.Fatal("Could not connect to database. Error: ", err.Error())
 		}
 	}
-	log.Println("Successfully connected to database")
-
-	log.Println("Starting drone API server")
 
 	a := app.New()
-
+	r := mux.NewRouter()
 	api := mux.NewRouter()
 	api.HandleFunc("/api/projects/{pid}", handlers.UpdateProject(a)).Methods("PATCH")
 	api.HandleFunc("/api/projects/{pid}", handlers.ShowProject(a)).Methods("GET")
 	api.HandleFunc("/api/projects", handlers.IndexProject(a)).Methods("GET")
-
+	r.PathPrefix("/api").Handler(negroni.New(
+		negroni.HandlerFunc(middleware.MongoMiddleware(s, dname)),
+		negroni.HandlerFunc(middleware.AuthMiddleware(a)),
+		negroni.Wrap(api),
+	))
 	n := negroni.New(
 		negroni.NewLogger(),
 		negroni.NewRecovery(),
 	)
-	n.Use(middleware.MongoMiddleware(s, dname))
-	n.Use(middleware.AuthMiddleware(a))
-	n.UseHandler(api)
-
+	n.UseHandler(r)
+	log.Printf("Listening on %s", apiListener)
 	log.Fatal(http.ListenAndServe(apiListener, n))
 }
