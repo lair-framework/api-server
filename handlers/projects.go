@@ -55,16 +55,6 @@ func removeDuplicates(in []string) []string {
 // UpdateProject is an HTTP handler to add/update a project using additive, smart merge
 func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
-		body, err := ioutil.ReadAll(req.Body)
-		if err != nil {
-			server.R.JSON(w, http.StatusInternalServerError, &app.Response{Status: "Error", Message: "Unable to read request body"})
-			return
-		}
-		var doc lair.Project
-		if err := json.Unmarshal(body, &doc); err != nil {
-			server.R.JSON(w, http.StatusInternalServerError, &app.Response{Status: "Error", Message: err.Error()})
-			return
-		}
 
 		db := context.Get(req, "db").(*mgo.Database)
 		if db == nil {
@@ -80,6 +70,17 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 				server.R.JSON(w, http.StatusForbidden, &app.Response{Status: "Error", Message: "Forbidden"})
 				return
 			}
+		}
+
+		body, err := ioutil.ReadAll(req.Body)
+		if err != nil {
+			server.R.JSON(w, http.StatusInternalServerError, &app.Response{Status: "Error", Message: "Unable to read request body"})
+			return
+		}
+		var doc lair.Project
+		if err := json.Unmarshal(body, &doc); err != nil {
+			server.R.JSON(w, http.StatusInternalServerError, &app.Response{Status: "Error", Message: err.Error()})
+			return
 		}
 
 		forcePorts := false
@@ -515,10 +516,9 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 				"$all": docIssue.PluginIDs,
 			}
 			m := bson.M{
-				"project_id": pid,
-				"plugin_ids": pluginM,
+				"projectId": pid,
+				"pluginIds": pluginM,
 			}
-			// Check if vulnerability already exists
 			issue := &lair.Issue{}
 			knownIssue := true
 			if err := db.C(server.C.Issues).Find(m).One(&issue); err != nil {
@@ -563,15 +563,14 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 				)
 				project.DroneLog = append(project.DroneLog, msg)
 
-				// Insert new vulnerability
 				if err := db.C(server.C.Issues).Insert(issue); err != nil {
-					// TODO: How to handle failed issue insert?
+					project.DroneLog = append(project.DroneLog, fmt.Sprintf("Failed to import issue %s", issue.Title))
 				}
 			}
 
 			if knownIssue {
 
-				// Used for tracking if changes were made to issueerability
+				// Used for tracking if changes were made to issue
 				data := []byte(fmt.Sprintf("%+v", issue))
 				preMD5 := fmt.Sprintf("%x", md5.Sum(data))
 
@@ -699,7 +698,6 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 		db.C(server.C.Projects).UpdateId(project.ID, project)
 
 		// End of import
-
 		server.R.JSON(w, http.StatusOK, &app.Response{Status: "Ok"})
 	}
 }
