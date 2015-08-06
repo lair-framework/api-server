@@ -72,6 +72,13 @@ func main() {
 	}
 
 	a := app.New()
+	db := s.DB(dname)
+	defer s.Close()
+	db.C(a.C.Hosts).EnsureIndexKey("projectId", "ipv4")
+	db.C(a.C.Services).EnsureIndexKey("projectId", "hostId", "port", "protocol")
+	db.C(a.C.Issues).EnsureIndexKey("projectId", "pluginIds")
+	db.C(a.C.WebDirectories).EnsureIndexKey("projectId", "hostId", "path", "port")
+
 	r := mux.NewRouter()
 	api := mux.NewRouter()
 	api.HandleFunc("/api/projects/{pid}", handlers.UpdateProject(a)).Methods("PATCH")
