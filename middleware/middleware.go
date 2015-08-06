@@ -9,15 +9,14 @@ import (
 
 	"github.com/codegangsta/negroni"
 	"github.com/gorilla/context"
-	"github.com/gorilla/mux"
 	"github.com/lair-framework/api-server/app"
 	"golang.org/x/crypto/bcrypt"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 )
 
-// MongoMiddleware maps a copy of the session to the request context.
-func MongoMiddleware(s *mgo.Session, dname string) negroni.HandlerFunc {
+// Mongo maps a copy of the session to the request context.
+func Mongo(s *mgo.Session, dname string) negroni.HandlerFunc {
 	return negroni.HandlerFunc(func(w http.ResponseWriter, req *http.Request, next http.HandlerFunc) {
 		session := s.Clone()
 		defer session.Close()
@@ -29,7 +28,7 @@ func MongoMiddleware(s *mgo.Session, dname string) negroni.HandlerFunc {
 
 // Auth is a middleware to authenicate a user to Lair's meteor resources and
 // ensures it has access the project provided in the url parameter.
-func AuthMiddleware(server *app.App) negroni.HandlerFunc {
+func Auth(server *app.App) negroni.HandlerFunc {
 	return negroni.HandlerFunc(func(w http.ResponseWriter, req *http.Request, next http.HandlerFunc) {
 		db, ok := context.Get(req, "db").(*mgo.Database)
 		if !ok {
@@ -66,16 +65,6 @@ func AuthMiddleware(server *app.App) negroni.HandlerFunc {
 		if err := bcrypt.CompareHashAndPassword([]byte(user.Services.Password.Bcrypt), []byte(h)); err != nil {
 			server.R.JSON(w, http.StatusUnauthorized, &app.Response{Status: "Error", Message: "Not Authorized"})
 			return
-		}
-		vars := mux.Vars(req)
-		pid, ok := vars["pid"]
-		if ok {
-			// project id present means route requires it, check for authorization
-			q := bson.M{"_id": pid, "$or": []bson.M{bson.M{"owner": user.Id}, bson.M{"contributors": user.Id}}}
-			if count, err := db.C("projects").Find(q).Count(); err != nil || count == 0 {
-				server.R.JSON(w, http.StatusForbidden, &app.Response{Status: "Error", Message: "Forbidden"})
-				return
-			}
 		}
 		context.Set(req, "user", user)
 		next(w, req)

@@ -71,10 +71,19 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 			server.R.JSON(w, http.StatusInternalServerError, &app.Response{Status: "Error", Message: "Unable to connect to database"})
 			return
 		}
+		user := context.Get(req, "user").(*middleware.User)
+		vars := mux.Vars(req)
+		pid, ok := vars["pid"]
+		if ok {
+			q := bson.M{"_id": pid, "$or": []bson.M{bson.M{"owner": user.Id}, bson.M{"contributors": user.Id}}}
+			if count, err := db.C("projects").Find(q).Count(); err != nil || count == 0 {
+				server.R.JSON(w, http.StatusForbidden, &app.Response{Status: "Error", Message: "Forbidden"})
+				return
+			}
+		}
 
 		forcePorts := false
 		// Read 'force-ports' URL parameter
-		vars := mux.Vars(req)
 		forcePortsStr := vars["force-ports"]
 		if forcePortsStr == "true" {
 			forcePorts = true
@@ -89,6 +98,7 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 			return
 		}
 
+		doc.ID = pid
 		// Validate required fields
 		if doc.ID == "" || doc.Commands == nil || len(doc.Commands) <= 0 {
 			server.R.JSON(w, http.StatusBadRequest, &app.Response{Status: "Error", Message: "Missing required field or invalid format"})
@@ -97,7 +107,6 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 
 		// Lookup project
 		var project lair.Project
-		pid := doc.ID
 		if err := db.C(server.C.Projects).FindId(doc.ID).One(&project); err != nil {
 			server.R.JSON(w, http.StatusNotFound, &app.Response{Status: "Error", Message: "Invalid project id"})
 			return

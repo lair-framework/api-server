@@ -78,8 +78,8 @@ func main() {
 	api.HandleFunc("/api/projects/{pid}", handlers.ShowProject(a)).Methods("GET")
 	api.HandleFunc("/api/projects", handlers.IndexProject(a)).Methods("GET")
 	r.PathPrefix("/api").Handler(negroni.New(
-		negroni.HandlerFunc(middleware.MongoMiddleware(s, dname)),
-		negroni.HandlerFunc(middleware.AuthMiddleware(a)),
+		negroni.HandlerFunc(middleware.Mongo(s, dname)),
+		negroni.HandlerFunc(middleware.Auth(a)),
 		negroni.Wrap(api),
 	))
 	n := negroni.New(
