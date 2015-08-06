@@ -15,6 +15,7 @@ import (
 
 const (
 	importuri = "/api/projects/%s"
+	exporturi = "/api/projects/%s"
 )
 
 // C is a Lair API client.
@@ -93,4 +94,25 @@ func (c *C) ImportProject(opts *DOptions, project *lair.Project) (*http.Response
 	req := &http.Request{Method: "PATCH", URL: reqURL, Body: cb, ContentLength: int64(len(body)), Header: header}
 	req.SetBasicAuth(c.User, c.Password)
 	return client.Do(req)
+}
+
+// ExportProject sends an HTTP request to Lair API Server to import a project.
+func (c *C) ExportProject(id string) (lair.Project, error) {
+	project := lair.Project{}
+	client := &http.Client{Transport: c.Transport}
+	resource := fmt.Sprintf(exporturi, id)
+	header := make(http.Header)
+	reqURL := &url.URL{Host: c.Host, Path: resource, Scheme: c.Scheme}
+	req := &http.Request{Method: "GET", URL: reqURL, Header: header}
+	req.SetBasicAuth(c.User, c.Password)
+	resp, err := client.Do(req)
+	if err != nil {
+		return project, err
+	}
+	data, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return project, err
+	}
+	err = json.Unmarshal(data, &project)
+	return project, err
 }

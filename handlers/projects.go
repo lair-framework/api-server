@@ -739,18 +739,18 @@ func ShowProject(server *app.App) func(w http.ResponseWriter, req *http.Request)
 			return
 		}
 		for i := range hosts {
-			h := hosts[i]
 			services := []lair.Service{}
-			if err := db.C(server.C.Services).Find(bson.M{"hostId": h.ID}).All(&services); err != nil {
+			if err := db.C(server.C.Services).Find(bson.M{"hostId": hosts[i].ID}).All(&services); err != nil {
 				server.R.JSON(w, http.StatusInternalServerError, &app.Response{Status: "Error", Message: "Internal server error"})
 				return
 			}
+			hosts[i].Services = services
 			webs := []lair.WebDirectory{}
-			if err := db.C(server.C.WebDirectories).Find(bson.M{"hostId": h.ID}).All(&webs); err != nil {
+			if err := db.C(server.C.WebDirectories).Find(bson.M{"hostId": hosts[i].ID}).All(&webs); err != nil {
 				server.R.JSON(w, http.StatusInternalServerError, &app.Response{Status: "Error", Message: "Internal server error"})
 				return
 			}
-			h.WebDirectories = webs
+			hosts[i].WebDirectories = webs
 		}
 		project.Hosts = hosts
 
