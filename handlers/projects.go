@@ -52,6 +52,19 @@ func removeDuplicates(in []string) []string {
 	return out
 }
 
+func removeDuplicateNotes(in []lair.Note) []lair.Note {
+	m := map[string]bool{}
+	out := []lair.Note{}
+	for _, i := range in {
+		if _, ok := m[i.Title]; ok {
+			continue
+		}
+		m[i.Title] = true
+		out = append(out, i)
+	}
+	return out
+}
+
 // UpdateProject is an HTTP handler to add/update a project using additive, smart merge
 func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
@@ -117,7 +130,7 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 		project.Commands = append(project.Commands, doc.Commands...)
 
 		// Append new notes
-		project.Notes = append(project.Notes, doc.Notes...)
+		project.Notes = removeDuplicateNotes(append(project.Notes, doc.Notes...))
 
 		// Add owner if necessary
 		if project.Owner == "" {
@@ -141,12 +154,6 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 
 		// Used for tracking any hosts that were skipped for exceeding MAXPORTS limit
 		skippedHosts := map[string]bool{}
-
-		// Ensure indexes
-		db.C(server.C.Hosts).EnsureIndexKey("projectId", "ipv4")
-		db.C(server.C.Services).EnsureIndexKey("projectId", "hostId", "port", "protocol")
-		db.C(server.C.Issues).EnsureIndexKey("projectId", "pluginIds")
-		db.C(server.C.WebDirectories).EnsureIndexKey("projectId", "hostId", "path", "port")
 
 		// Insert auth interfaces
 		for _, docAI := range doc.AuthInterfaces {
@@ -335,7 +342,7 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 			}
 
 			// Append all host notes
-			host.Notes = append(host.Notes, docHost.Notes...)
+			host.Notes = removeDuplicateNotes(append(host.Notes, docHost.Notes...))
 			// Append all tags
 			host.Tags = removeDuplicates(append(host.Tags, docHost.Tags...))
 
@@ -364,7 +371,7 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 					}
 				}
 				if !found {
-					host.Hostnames = append(host.Hostnames, docHostname)
+					host.Hostnames = removeDuplicates(append(host.Hostnames, docHostname))
 					host.LastModifiedBy = doc.Tool
 				}
 			}
@@ -464,7 +471,7 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 				}
 
 				// Append all service notes
-				service.Notes = append(service.Notes, docService.Notes...)
+				service.Notes = removeDuplicateNotes(append(service.Notes, docService.Notes...))
 
 				// Add any new files
 				for idx, docFile := range docService.Files {
@@ -590,7 +597,7 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 						}
 					}
 					if !found {
-						issue.CVEs = append(issue.CVEs, docCVE)
+						issue.CVEs = removeDuplicates(append(issue.CVEs, docCVE))
 						issue.LastModifiedBy = doc.Tool
 					}
 				}
@@ -653,7 +660,7 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 				}
 
 				// Append notes
-				issue.Notes = append(issue.Notes, docIssue.Notes...)
+				issue.Notes = removeDuplicateNotes(append(issue.Notes, docIssue.Notes...))
 
 				// Add any new 'Identified By' info
 				found := false
@@ -712,11 +719,76 @@ func ShowProject(server *app.App) func(w http.ResponseWriter, req *http.Request)
 		}
 		vars := mux.Vars(req)
 		pid := vars["pid"]
+		user := context.Get(req, "user").(*middleware.User)
+		pid, ok := vars["pid"]
+		if ok {
+			q := bson.M{"_id": pid, "$or": []bson.M{bson.M{"owner": user.Id}, bson.M{"contributors": user.Id}}}
+			if count, err := db.C("projects").Find(q).Count(); err != nil || count == 0 {
+				server.R.JSON(w, http.StatusForbidden, &app.Response{Status: "Error", Message: "Forbidden"})
+				return
+			}
+		}
 		project := &lair.Project{}
 		if err := db.C(server.C.Projects).FindId(pid).One(&project); err != nil {
-			server.R.JSON(w, http.StatusInternalServerError, &app.Response{Status: "Error", Message: "Unable to retrieve project or project does not exist"})
+			server.R.JSON(w, http.StatusNotFound, &app.Response{Status: "Error", Message: "Unable to retrieve project or project does not exist"})
 			return
 		}
+		hosts := []lair.Host{}
+		if err := db.C(server.C.Hosts).Find(bson.M{"projectId": pid}).All(&hosts); err != nil {
+			server.R.JSON(w, http.StatusInternalServerError, &app.Response{Status: "Error", Message: "Internal server error"})
+			return
+		}
+		for i := range hosts {
+			h := hosts[i]
+			services := []lair.Service{}
+			if err := db.C(server.C.Services).Find(bson.M{"hostId": h.ID}).All(&services); err != nil {
+				server.R.JSON(w, http.StatusInternalServerError, &app.Response{Status: "Error", Message: "Internal server error"})
+				return
+			}
+			webs := []lair.WebDirectory{}
+			if err := db.C(server.C.WebDirectories).Find(bson.M{"hostId": h.ID}).All(&webs); err != nil {
+				server.R.JSON(w, http.StatusInternalServerError, &app.Response{Status: "Error", Message: "Internal server error"})
+				return
+			}
+			h.WebDirectories = webs
+		}
+		project.Hosts = hosts
+
+		people := []lair.Person{}
+		if err := db.C(server.C.People).Find(bson.M{"projectId": pid}).All(&people); err != nil {
+			server.R.JSON(w, http.StatusInternalServerError, &app.Response{Status: "Error", Message: "Internal server error"})
+			return
+		}
+		project.People = people
+
+		issues := []lair.Issue{}
+		if err := db.C(server.C.Issues).Find(bson.M{"projectId": pid}).All(&issues); err != nil {
+			server.R.JSON(w, http.StatusInternalServerError, &app.Response{Status: "Error", Message: "Internal server error"})
+			return
+		}
+		project.Issues = issues
+
+		creds := []lair.Credential{}
+		if err := db.C(server.C.Credentials).Find(bson.M{"projectId": pid}).All(&creds); err != nil {
+			server.R.JSON(w, http.StatusInternalServerError, &app.Response{Status: "Error", Message: "Internal server error"})
+			return
+		}
+		project.Credentials = creds
+
+		auths := []lair.AuthInterface{}
+		if err := db.C(server.C.AuthInterfaces).Find(bson.M{"projectId": pid}).All(&auths); err != nil {
+			server.R.JSON(w, http.StatusInternalServerError, &app.Response{Status: "Error", Message: "Internal server error"})
+			return
+		}
+		project.AuthInterfaces = auths
+
+		nets := []lair.Netblock{}
+		if err := db.C(server.C.Netblocks).Find(bson.M{"projectId": pid}).All(&nets); err != nil {
+			server.R.JSON(w, http.StatusInternalServerError, &app.Response{Status: "Error", Message: "Internal server error"})
+			return
+		}
+		project.Netblocks = nets
+
 		server.R.JSON(w, http.StatusOK, project)
 	}
 }
