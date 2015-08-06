@@ -79,19 +79,24 @@ func main() {
 	db.C(a.C.Issues).EnsureIndexKey("projectId", "pluginIds")
 	db.C(a.C.WebDirectories).EnsureIndexKey("projectId", "hostId", "path", "port")
 
+	os.Mkdir(a.Filepath, 0600)
 	r := mux.NewRouter()
 	api := mux.NewRouter()
 	api.HandleFunc("/api/projects/{pid}", handlers.UpdateProject(a)).Methods("PATCH")
 	api.HandleFunc("/api/projects/{pid}", handlers.ShowProject(a)).Methods("GET")
+	api.HandleFunc("/api/projects/{pid}/files", handlers.UploadFile(a)).Methods("POST")
+	api.HandleFunc("/api/projects/{pid}/files/{filename:.*}", handlers.ServeFile(a)).Methods("GET")
 	api.HandleFunc("/api/projects", handlers.IndexProject(a)).Methods("GET")
 	r.PathPrefix("/api").Handler(negroni.New(
 		negroni.HandlerFunc(middleware.Mongo(s, dname)),
 		negroni.HandlerFunc(middleware.Auth(a)),
 		negroni.Wrap(api),
 	))
+	rec := negroni.NewRecovery()
+	rec.PrintStack = false
 	n := negroni.New(
 		negroni.NewLogger(),
-		negroni.NewRecovery(),
+		rec,
 	)
 	n.UseHandler(r)
 	log.Printf("Listening on %s", apiListener)

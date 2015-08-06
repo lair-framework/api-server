@@ -1,16 +1,20 @@
 package app
 
 import (
+	"os"
+	"path/filepath"
+
 	"github.com/lair-framework/go-lair"
 	"github.com/unrolled/render"
 )
 
 // App is used to map global variables used in handlers.
 type App struct {
-	R       *render.Render
-	C       C
-	Version string
-	History int
+	R        *render.Render
+	C        C
+	Version  string
+	History  int
+	Filepath string
 }
 
 // Response is used to return a status and message to handler requests.
@@ -41,8 +45,10 @@ func (a *App) IsValidStatus(status string) bool {
 
 // New returns App with defaults.
 func New() *App {
+	f, _ := os.Getwd()
 	a := &App{
-		R: render.New(),
+		R:        render.New(),
+		Filepath: filepath.Join(f, "files"),
 		C: C{
 			AuthInterfaces: "auth_interfaces",
 			Credentials:    "credentials",
