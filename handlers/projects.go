@@ -78,7 +78,7 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 		vars := mux.Vars(req)
 		pid, ok := vars["pid"]
 		if ok {
-			q := bson.M{"_id": pid, "$or": []bson.M{bson.M{"owner": user.Id}, bson.M{"contributors": user.Id}}}
+			q := bson.M{"_id": pid, "$or": []bson.M{bson.M{"owner": user.ID}, bson.M{"contributors": user.ID}}}
 			if count, err := db.C("projects").Find(q).Count(); err != nil || count == 0 {
 				server.R.JSON(w, http.StatusForbidden, &app.Response{Status: "Error", Message: "Forbidden"})
 				return
@@ -722,7 +722,7 @@ func ShowProject(server *app.App) func(w http.ResponseWriter, req *http.Request)
 		user := context.Get(req, "user").(*middleware.User)
 		pid, ok := vars["pid"]
 		if ok {
-			q := bson.M{"_id": pid, "$or": []bson.M{bson.M{"owner": user.Id}, bson.M{"contributors": user.Id}}}
+			q := bson.M{"_id": pid, "$or": []bson.M{bson.M{"owner": user.ID}, bson.M{"contributors": user.ID}}}
 			if count, err := db.C("projects").Find(q).Count(); err != nil || count == 0 {
 				server.R.JSON(w, http.StatusForbidden, &app.Response{Status: "Error", Message: "Forbidden"})
 				return
@@ -811,8 +811,8 @@ func IndexProject(server *app.App) func(w http.ResponseWriter, req *http.Request
 		// Ensure query is restricted to only projects to which the user is authorized
 		or := &bson.M{
 			"$or": []bson.M{
-				bson.M{"owner": user.Id},
-				bson.M{"contributors": user.Id},
+				bson.M{"owner": user.ID},
+				bson.M{"contributors": user.ID},
 			},
 		}
 		var projects []lair.Project

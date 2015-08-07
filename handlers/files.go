@@ -59,7 +59,7 @@ func ServeFile(server *app.App) func(w http.ResponseWriter, req *http.Request) {
 			server.R.JSON(w, http.StatusBadRequest, &app.Response{Status: "Error", Message: "Missing project id"})
 			return
 		}
-		q := bson.M{"_id": pid, "$or": []bson.M{bson.M{"owner": user.Id}, bson.M{"contributors": user.Id}}}
+		q := bson.M{"_id": pid, "$or": []bson.M{bson.M{"owner": user.ID}, bson.M{"contributors": user.ID}}}
 		if count, err := db.C("projects").Find(q).Count(); err != nil || count == 0 {
 			server.R.JSON(w, http.StatusForbidden, &app.Response{Status: "Error", Message: "Forbidden"})
 			return
@@ -102,7 +102,7 @@ func UploadFile(server *app.App) func(w http.ResponseWriter, req *http.Request) 
 		vars := mux.Vars(req)
 		pid, ok := vars["pid"]
 		if ok {
-			q := bson.M{"_id": pid, "$or": []bson.M{bson.M{"owner": user.Id}, bson.M{"contributors": user.Id}}}
+			q := bson.M{"_id": pid, "$or": []bson.M{bson.M{"owner": user.ID}, bson.M{"contributors": user.ID}}}
 			if count, err := db.C("projects").Find(q).Count(); err != nil || count == 0 {
 				server.R.JSON(w, http.StatusForbidden, &app.Response{Status: "Error", Message: "Forbidden"})
 				return

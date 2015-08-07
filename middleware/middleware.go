@@ -45,26 +45,41 @@ func Auth(server *app.App) negroni.HandlerFunc {
 			server.R.JSON(w, http.StatusUnauthorized, &app.Response{Status: "Error", Message: "Not Authorized"})
 			return
 		}
+		user := &User{}
 		parts := strings.Split(string(data), ":")
 		if len(parts) < 2 {
 			server.R.JSON(w, http.StatusUnauthorized, &app.Response{Status: "Error", Message: "Not Authorized"})
 			return
 		}
-		user := &User{}
-		in := []bson.M{bson.M{"address": parts[0], "verified": false}}
-		if err := db.C("users").Find(bson.M{"emails": bson.M{"$in": in}}).One(&user); err != nil {
-			server.R.JSON(w, http.StatusUnauthorized, &app.Response{Status: "Error", Message: "Not Authorized"})
-			return
-		}
-		shaHash := sha256.New()
-		if _, err := shaHash.Write([]byte(parts[1])); err != nil {
-			http.Error(w, "Not Authorized", http.StatusUnauthorized)
-			return
-		}
-		h := hex.EncodeToString(shaHash.Sum(nil))
-		if err := bcrypt.CompareHashAndPassword([]byte(user.Services.Password.Bcrypt), []byte(h)); err != nil {
-			server.R.JSON(w, http.StatusUnauthorized, &app.Response{Status: "Error", Message: "Not Authorized"})
-			return
+		if parts[0] == parts[1] {
+			shaHash := sha256.New()
+			if _, err := shaHash.Write([]byte(parts[0])); err != nil {
+				server.R.JSON(w, http.StatusUnauthorized, &app.Response{Status: "Error", Message: "Not Authorized"})
+				return
+			}
+			token := base64.StdEncoding.EncodeToString(shaHash.Sum(nil))
+			if err := db.C("users").Find(bson.M{
+				"services.resume.loginTokens": bson.M{"$elemMatch": bson.M{"hashedToken": token}},
+			}).One(&user); err != nil {
+				server.R.JSON(w, http.StatusUnauthorized, &app.Response{Status: "Error", Message: "Not Authorized"})
+				return
+			}
+		} else {
+			in := []bson.M{bson.M{"address": parts[0], "verified": false}}
+			if err := db.C("users").Find(bson.M{"emails": bson.M{"$in": in}}).One(&user); err != nil {
+				server.R.JSON(w, http.StatusUnauthorized, &app.Response{Status: "Error", Message: "Not Authorized"})
+				return
+			}
+			shaHash := sha256.New()
+			if _, err := shaHash.Write([]byte(parts[1])); err != nil {
+				http.Error(w, "Not Authorized", http.StatusUnauthorized)
+				return
+			}
+			h := hex.EncodeToString(shaHash.Sum(nil))
+			if err := bcrypt.CompareHashAndPassword([]byte(user.Services.Password.Bcrypt), []byte(h)); err != nil {
+				server.R.JSON(w, http.StatusUnauthorized, &app.Response{Status: "Error", Message: "Not Authorized"})
+				return
+			}
 		}
 		context.Set(req, "user", user)
 		next(w, req)
@@ -73,11 +88,16 @@ func Auth(server *app.App) negroni.HandlerFunc {
 
 // User is a user from meteor.js.
 type User struct {
-	Id       string `bson:"_id"`
+	ID       string `bson:"_id"`
 	Services struct {
 		Password struct {
 			Bcrypt string `bson:"bcrypt"`
 		} `bson:"password"`
+		Resume struct {
+			Logintokens []struct {
+				Hashedtoken string `bson:"hashedToken"`
+			} `bson:"loginTokens"`
+		} `bson:"resume"`
 	} `bson:"services"`
 	Emails []struct {
 		Address string `bson:"address"`
