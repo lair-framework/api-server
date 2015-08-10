@@ -259,6 +259,14 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 				netblock.Name = docNetblock.Name
 			}
 
+			if netblock.Address == "" {
+				netblock.Address = docNetblock.Address
+			}
+
+			if netblock.State == "" {
+				netblock.State = docNetblock.State
+			}
+
 			if netblock.City == "" {
 				netblock.City = docNetblock.City
 			}
