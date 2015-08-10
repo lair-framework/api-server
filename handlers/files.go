@@ -26,7 +26,7 @@ type fileRequest struct {
 	issueID   string
 }
 
-func (f *fileRequest) FieldMap() binding.FieldMap {
+func (f *fileRequest) FieldMap(req *http.Request) binding.FieldMap {
 	return binding.FieldMap{
 		&f.File:      "file",
 		&f.hostID:    "host_id",
