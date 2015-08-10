@@ -114,7 +114,7 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 
 		doc.ID = pid
 		// Validate required fields
-		if doc.ID == "" || doc.Commands == nil || len(doc.Commands) <= 0 {
+		if doc.ID == "" || doc.Commands == nil || len(doc.Commands) <= 0 || doc.Tool == "" {
 			server.R.JSON(w, http.StatusBadRequest, &app.Response{Status: "Error", Message: "Missing required field or invalid format"})
 			return
 		}
