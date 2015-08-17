@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	"regexp"
 	"time"
 
 	"github.com/gorilla/context"
@@ -23,6 +24,8 @@ const (
 	// MAXPORTS is the maximum number of ports allowable for a single host without ForcePorts enabled.
 	MAXPORTS = 1000
 )
+
+var validIPAddress = regexp.MustCompile(`(?P<ip>[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})$`)
 
 // Return the status as a string based off the cvss value
 func calcRating(cvss float64) string {
@@ -328,6 +331,17 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 				project.DroneLog = append(project.DroneLog, msg)
 				continue
 			}
+
+			if !validIPAddress.MatchString(docHost.IPv4) {
+				skippedHosts[docHost.IPv4] = true
+				msg := fmt.Sprintf(
+					"%s - Host skipped. Invalid IP address format: %s",
+					time.Now().String(),
+					docHost.IPv4,
+				)
+				project.DroneLog = append(project.DroneLog, msg)
+				continue
+			}
 			host := &lair.Host{}
 			knownHost := true
 			// Determine if the host is already in database
@@ -346,6 +360,17 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 			host.LongIPv4Addr = ip.IpToInt(net.ParseIP(host.IPv4))
 
 			if host.MAC == "" {
+				if len(docHost.MAC) > 200 {
+					// Don't import hosts with more than approximately 10 MAC addresses
+					skippedHosts[docHost.IPv4] = true
+					msg := fmt.Sprintf(
+						"%s - Host skipped. Excessive MAC address values: %s",
+						time.Now().String(),
+						docHost.IPv4,
+					)
+					project.DroneLog = append(project.DroneLog, msg)
+					continue
+				}
 				host.MAC = docHost.MAC
 			}
 
