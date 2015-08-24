@@ -161,6 +161,7 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 		// Insert auth interfaces
 		for _, docAI := range doc.AuthInterfaces {
 			ai := &lair.AuthInterface{
+				ID:            bson.NewObjectId().Hex(),
 				ProjectID:     pid,
 				IsMultifactor: docAI.IsMultifactor,
 				Kind:          docAI.Kind,
@@ -172,21 +173,36 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 
 		// Insert credentials
 		for _, docCred := range doc.Credentials {
-			cred := &lair.Credential{
-				ProjectID: pid,
-				Username:  docCred.Username,
-				Password:  docCred.Password,
-				Format:    docCred.Format,
-				Hash:      docCred.Hash,
-				Host:      docCred.Host,
-				Service:   docCred.Service,
+			m := bson.M{
+				"projectId": pid,
+				"username":  docCred.Username,
+				"hash":      docCred.Hash,
 			}
-			db.C(server.C.Credentials).Insert(cred)
+			// Determine if the credential is already in database
+			cred := &lair.Credential{}
+			if err := db.C(server.C.Credentials).Find(m).One(&cred); err != nil {
+				cred.ID = bson.NewObjectId().Hex()
+				cred.ProjectID = pid
+				cred.Username = docCred.Username
+				cred.Password = docCred.Password
+				cred.Format = docCred.Format
+				cred.Hash = docCred.Hash
+				cred.Host = docCred.Host
+				cred.Service = docCred.Service
+			} else {
+				cred.Password = docCred.Password
+				cred.Format = docCred.Format
+				cred.Host = docCred.Host
+			}
+
+			// Upsert changes
+			db.C(server.C.Credentials).UpsertId(cred.ID, cred)
 		}
 
 		// Insert People
 		for _, docPerson := range doc.People {
 			person := &lair.Person{
+				ID:                bson.NewObjectId().Hex(),
 				ProjectID:         pid,
 				PrincipalName:     docPerson.PrincipalName,
 				SAMAccountName:    docPerson.SAMAccountName,
