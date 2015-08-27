@@ -377,15 +377,14 @@ func UpdateProject(server *app.App) func(w http.ResponseWriter, req *http.Reques
 
 			if host.MAC == "" {
 				if len(docHost.MAC) > 200 {
-					// Don't import hosts with more than approximately 10 MAC addresses
-					skippedHosts[docHost.IPv4] = true
+					// Don't let string of MACs exceed 200 chars in length
+					docHost.MAC = docHost.MAC[:200]
 					msg := fmt.Sprintf(
-						"%s - Host skipped. Excessive MAC address values: %s",
+						"%s - MAC data cropped. Excessive MAC address values: %s",
 						time.Now().String(),
 						docHost.IPv4,
 					)
 					project.DroneLog = append(project.DroneLog, msg)
-					continue
 				}
 				host.MAC = docHost.MAC
 			}
