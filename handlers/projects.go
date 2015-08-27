@@ -811,7 +811,7 @@ func ShowProject(server *app.App) func(w http.ResponseWriter, req *http.Request)
 		project.People = people
 
 		issues := []lair.Issue{}
-		if err := db.C(server.C.Issues).Find(bson.M{"projectId": pid}).All(&issues); err != nil {
+		if err := db.C(server.C.Issues).Find(bson.M{"projectId": pid}).Sort("-cvss", "title").All(&issues); err != nil {
 			server.R.JSON(w, http.StatusInternalServerError, &app.Response{Status: "Error", Message: "Internal server error"})
 			return
 		}
