@@ -84,6 +84,7 @@ func main() {
 	api := mux.NewRouter()
 	api.HandleFunc("/api/projects/{pid}", handlers.UpdateProject(a)).Methods("PATCH")
 	api.HandleFunc("/api/projects/{pid}", handlers.ShowProject(a)).Methods("GET")
+	api.HandleFunc("/api/projects/{pid}/hosts", handlers.IndexHost(a)).Methods("GET")
 	api.HandleFunc("/api/projects/{pid}/files", handlers.UploadFile(a)).Methods("POST")
 	api.HandleFunc("/api/projects/{pid}/files/{filename:.*}", handlers.ServeFile(a)).Methods("GET")
 	api.HandleFunc("/api/projects", handlers.IndexProject(a)).Methods("GET")
