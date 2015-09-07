@@ -95,8 +95,8 @@ func (a *App) Router() *mux.Router {
 	r.Handle("/api/projects/{pid}", a.newProjectAuthHandler(a.UpdateProject)).Methods("PATCH")
 	r.Handle("/api/projects/{pid}", a.newProjectAuthHandler(a.ShowProject)).Methods("GET")
 	r.Handle("/api/projects/{pid}/hosts", a.newProjectAuthHandler(a.IndexHost)).Methods("GET")
-	r.Handle("/api/project/{pid}/files", a.newProjectAuthHandler(a.UploadFile)).Methods("POST")
-	r.Handle("/api/files/{filename:.*}", a.newAnonHandler(a.ServeFile)).Methods("GET")
+	r.Handle("/api/projects/{pid}/files", a.newProjectAuthHandler(a.UploadFile)).Methods("POST")
+	r.Handle("/api/projects/{pid}/files/{filename:.*}", a.newAnonHandler(a.ServeFile)).Methods("GET")
 	return r
 }
 
