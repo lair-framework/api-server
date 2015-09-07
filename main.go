@@ -10,10 +10,7 @@ import (
 	"time"
 
 	"github.com/codegangsta/negroni"
-	"github.com/gorilla/mux"
 	"github.com/lair-framework/api-server/app"
-	"github.com/lair-framework/api-server/handlers"
-	"github.com/lair-framework/api-server/middleware"
 	"gopkg.in/mgo.v2"
 )
 
@@ -71,7 +68,11 @@ func main() {
 		}
 	}
 
-	a := app.New()
+	a := app.New(&app.O{
+		S:     s,
+		DName: dname,
+	})
+
 	db := s.DB(dname)
 	defer s.Close()
 	db.C(a.C.Hosts).EnsureIndexKey("projectId", "ipv4")
@@ -80,26 +81,14 @@ func main() {
 	db.C(a.C.WebDirectories).EnsureIndexKey("projectId", "hostId", "path", "port")
 
 	os.Mkdir(a.Filepath, 0600)
-	r := mux.NewRouter()
-	api := mux.NewRouter()
-	api.HandleFunc("/api/projects/{pid}", handlers.UpdateProject(a)).Methods("PATCH")
-	api.HandleFunc("/api/projects/{pid}", handlers.ShowProject(a)).Methods("GET")
-	api.HandleFunc("/api/projects/{pid}/hosts", handlers.IndexHost(a)).Methods("GET")
-	api.HandleFunc("/api/projects/{pid}/files", handlers.UploadFile(a)).Methods("POST")
-	api.HandleFunc("/api/projects/{pid}/files/{filename:.*}", handlers.ServeFile(a)).Methods("GET")
-	api.HandleFunc("/api/projects", handlers.IndexProject(a)).Methods("GET")
-	r.PathPrefix("/api").Handler(negroni.New(
-		negroni.HandlerFunc(middleware.Mongo(s, dname)),
-		negroni.HandlerFunc(middleware.Auth(a)),
-		negroni.Wrap(api),
-	))
+
 	rec := negroni.NewRecovery()
 	rec.PrintStack = false
 	n := negroni.New(
 		negroni.NewLogger(),
 		rec,
 	)
-	n.UseHandler(r)
+	n.UseHandler(a.Router())
 	log.Printf("Listening on %s", apiListener)
 	log.Fatal(http.ListenAndServe(apiListener, n))
 }
