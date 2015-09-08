@@ -10,9 +10,10 @@ import (
 
 	"github.com/gorilla/context"
 	"github.com/gorilla/mux"
+	"github.com/jmcvetta/randutil"
+	"github.com/kennygrant/sanitize"
 	"github.com/lair-framework/go-lair"
 	"github.com/mholt/binding"
-	"github.com/nu7hatch/gouuid"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 )
@@ -43,6 +44,12 @@ func (f *fileRequest) Validate(req *http.Request, errs binding.Errors) binding.E
 	return errs
 }
 
+var imgExts = map[string]bool{
+	".jpg":  true,
+	".png":  true,
+	".jpeg": true,
+}
+
 func (a *App) ServeFile(w http.ResponseWriter, req *http.Request) {
 	db := context.Get(req, "db").(*mgo.Database)
 	if db == nil {
@@ -61,22 +68,36 @@ func (a *App) ServeFile(w http.ResponseWriter, req *http.Request) {
 		a.R.JSON(w, http.StatusBadRequest, &Response{Status: "Error", Message: "Missing filename"})
 		return
 	}
-	found := false
 	projectQ := bson.M{"_id": pid, "files": bson.M{"$elemMatch": bson.M{"url": req.URL.Path}}}
 	subQ := bson.M{"projectId": pid, "files": bson.M{"$elemMatch": bson.M{"url": req.URL.Path}}}
-	if c, err := db.C(a.C.Projects).Find(projectQ).Count(); c != 0 && err == nil {
-		found = true
-	} else if c, err := db.C(a.C.Hosts).Find(subQ).Count(); c != 0 && err == nil {
-		found = true
-	} else if c, err := db.C(a.C.Services).Find(subQ).Count(); c != 0 && err == nil {
-		found = true
-	} else if c, err := db.C(a.C.Issues).Find(subQ).Count(); c != 0 && err == nil {
-		found = true
+	p := lair.Project{}
+	h := lair.Host{}
+	s := lair.Service{}
+	i := lair.Issue{}
+	files := []lair.File{}
+	selector := bson.M{"files": 1}
+	if err := db.C(a.C.Projects).Find(projectQ).Select(selector).One(&p); err == nil {
+		files = p.Files
+	} else if err := db.C(a.C.Hosts).Find(subQ).Select(selector).One(&h); err == nil {
+		files = h.Files
+	} else if err := db.C(a.C.Services).Find(subQ).Select(selector).One(&s); err == nil {
+		files = s.Files
+	} else if err := db.C(a.C.Issues).Find(subQ).Select(selector).One(&i); err == nil {
+		files = i.Files
 	}
-
-	if !found {
+	if len(files) < 1 {
 		a.R.JSON(w, http.StatusNotFound, &Response{Status: "Error", Message: "File not found"})
 		return
+	}
+	file := lair.File{}
+	for _, f := range files {
+		if f.URL == req.URL.Path {
+			file = f
+			break
+		}
+	}
+	if !imgExts[path.Ext(file.FileName)] {
+		w.Header().Set("Content-Disposition", "attachment; filename="+file.FileName)
 	}
 	http.ServeFile(w, req, path.Join(a.Filepath, path.Clean(filename)))
 }
@@ -104,16 +125,14 @@ func (a *App) UploadFile(w http.ResponseWriter, req *http.Request) {
 	fh, err := u.File.Open()
 	if err != nil {
 		a.R.JSON(w, http.StatusInternalServerError, &Response{Status: "Error", Message: "Internal server error"})
-		log.Println(err)
 		return
 	}
-	uid, err := uuid.NewV4()
+	randomValue, err := randutil.AlphaString(48)
 	if err != nil {
 		a.R.JSON(w, http.StatusInternalServerError, &Response{Status: "Error", Message: "Internal server error"})
-		log.Println(err)
 		return
 	}
-	uname := uid.String() + path.Ext(path.Base(u.File.Filename))
+	uname := randomValue + path.Ext(path.Base(u.File.Filename))
 	fname := path.Join(a.Filepath, uname)
 	hf, err := os.Create(fname)
 	if err != nil {
@@ -129,7 +148,7 @@ func (a *App) UploadFile(w http.ResponseWriter, req *http.Request) {
 
 	fileURL := req.URL.Path + "/" + uname
 	lairFile := lair.File{
-		FileName: u.File.Filename,
+		FileName: sanitize.Name(u.File.Filename),
 		URL:      fileURL,
 	}
 
