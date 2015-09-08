@@ -2,7 +2,6 @@ package app
 
 import (
 	"io"
-	"log"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -137,12 +136,10 @@ func (a *App) UploadFile(w http.ResponseWriter, req *http.Request) {
 	hf, err := os.Create(fname)
 	if err != nil {
 		a.R.JSON(w, http.StatusInternalServerError, &Response{Status: "Error", Message: "Internal server error"})
-		log.Println(err)
 		return
 	}
 	if _, err := io.Copy(hf, fh); err != nil {
 		a.R.JSON(w, http.StatusInternalServerError, &Response{Status: "Error", Message: "Internal server error"})
-		log.Println(err)
 		return
 	}
 
@@ -155,28 +152,60 @@ func (a *App) UploadFile(w http.ResponseWriter, req *http.Request) {
 	if u.hostID != "" {
 		if err := db.C(a.C.Hosts).Update(bson.M{"projectId": pid, "_id": u.hostID}, bson.M{"$addToSet": bson.M{"files": lairFile}}); err != nil {
 			a.R.JSON(w, http.StatusNotFound, &Response{Status: "Error", Message: "The host was not found"})
-			log.Println(err)
 			return
 		}
 	} else if u.serviceID != "" {
 		if err := db.C(a.C.Services).Update(bson.M{"projectId": pid, "_id": u.hostID}, bson.M{"$addToSet": bson.M{"files": lairFile}}); err != nil {
 			a.R.JSON(w, http.StatusNotFound, &Response{Status: "Error", Message: "The service was not found"})
-			log.Println(err)
 			return
 		}
 	} else if u.issueID != "" {
 		if err := db.C(a.C.Issues).Update(bson.M{"projectId": pid, "_id": u.hostID}, bson.M{"$addToSet": bson.M{"files": lairFile}}); err != nil {
 			a.R.JSON(w, http.StatusNotFound, &Response{Status: "Error", Message: "The host was not found"})
-			log.Println(err)
 			return
 		}
 	} else {
 		if err := db.C(a.C.Projects).Update(bson.M{"_id": pid}, bson.M{"$addToSet": bson.M{"files": lairFile}}); err != nil {
 			a.R.JSON(w, http.StatusInternalServerError, &Response{Status: "Error", Message: "Internal server error"})
-			log.Println(err)
 			return
 		}
 	}
 
 	a.R.JSON(w, http.StatusCreated, &lairFile)
+}
+
+// RemoveFile is an http handler for a DELETE request to remove a file.
+func (a *App) RemoveFile(w http.ResponseWriter, req *http.Request) {
+	db := context.Get(req, "db").(*mgo.Database)
+	if db == nil {
+		a.R.JSON(w, http.StatusInternalServerError, &Response{Status: "Error", Message: "Unable to connect to database"})
+		return
+	}
+	vars := mux.Vars(req)
+	pid, ok := vars["pid"]
+	if !ok {
+		a.R.JSON(w, http.StatusBadRequest, &Response{Status: "Error", Message: "Missing project id"})
+		return
+	}
+
+	filename, ok := vars["filename"]
+	if !ok {
+		a.R.JSON(w, http.StatusBadRequest, &Response{Status: "Error", Message: "Missing filename"})
+		return
+	}
+	projectQ := bson.M{"_id": pid, "files": bson.M{"$elemMatch": bson.M{"url": req.URL.Path}}}
+	update := bson.M{"$pull": bson.M{"files": bson.M{"url": req.URL.Path}}}
+
+	db.C(a.C.Projects).Update(projectQ, update)
+	if hid, ok := vars["hid"]; ok {
+		db.C(a.C.Hosts).Update(bson.M{"_id": hid}, update)
+	}
+	if sid, ok := vars["sid"]; ok {
+		db.C(a.C.Services).Update(bson.M{"_id": sid}, update)
+	}
+	if iid, ok := vars["iid"]; ok {
+		db.C(a.C.Issues).Update(bson.M{"_id": iid}, update)
+	}
+	os.Remove(path.Join(a.Filepath, path.Clean(filename)))
+	a.R.JSON(w, http.StatusOK, nil)
 }

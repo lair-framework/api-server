@@ -80,7 +80,7 @@ func main() {
 	db.C(a.C.Issues).EnsureIndexKey("projectId", "pluginIds")
 	db.C(a.C.WebDirectories).EnsureIndexKey("projectId", "hostId", "path", "port")
 
-	os.Mkdir(a.Filepath, 0600)
+	os.Mkdir(a.Filepath, 0775)
 
 	rec := negroni.NewRecovery()
 	rec.PrintStack = false
