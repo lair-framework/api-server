@@ -156,14 +156,14 @@ func (a *App) UploadFile(w http.ResponseWriter, req *http.Request) {
 		}
 	} else if u.serviceID != "" {
 		lairFile.URL = "/api/projects/" + pid + "/services/" + u.serviceID + "/files/" + uname
-		if err := db.C(a.C.Services).Update(bson.M{"projectId": pid, "_id": u.hostID}, bson.M{"$addToSet": bson.M{"files": lairFile}}); err != nil {
+		if err := db.C(a.C.Services).Update(bson.M{"projectId": pid, "_id": u.serviceID}, bson.M{"$addToSet": bson.M{"files": lairFile}}); err != nil {
 			a.R.JSON(w, http.StatusNotFound, &Response{Status: "Error", Message: "The service was not found"})
 			return
 		}
 	} else if u.issueID != "" {
 		lairFile.URL = "/api/projects/" + pid + "/issues/" + u.issueID + "/files/" + uname
-		if err := db.C(a.C.Issues).Update(bson.M{"projectId": pid, "_id": u.hostID}, bson.M{"$addToSet": bson.M{"files": lairFile}}); err != nil {
-			a.R.JSON(w, http.StatusNotFound, &Response{Status: "Error", Message: "The host was not found"})
+		if err := db.C(a.C.Issues).Update(bson.M{"projectId": pid, "_id": u.issueID}, bson.M{"$addToSet": bson.M{"files": lairFile}}); err != nil {
+			a.R.JSON(w, http.StatusNotFound, &Response{Status: "Error", Message: "The issue was not found"})
 			return
 		}
 	} else {
