@@ -49,6 +49,7 @@ var imgExts = map[string]bool{
 	".jpeg": true,
 }
 
+// ServeFile is an http handler for a GET request to download a file.
 func (a *App) ServeFile(w http.ResponseWriter, req *http.Request) {
 	db := context.Get(req, "db").(*mgo.Database)
 	if db == nil {
@@ -101,6 +102,7 @@ func (a *App) ServeFile(w http.ResponseWriter, req *http.Request) {
 	http.ServeFile(w, req, path.Join(a.Filepath, path.Clean(filename)))
 }
 
+// UploadFile is a http handler for POST request to upload a file.
 func (a *App) UploadFile(w http.ResponseWriter, req *http.Request) {
 	db := context.Get(req, "db").(*mgo.Database)
 	if db == nil {

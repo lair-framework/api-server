@@ -44,6 +44,7 @@ type C struct {
 	WebDirectories string
 }
 
+// O is options passed to New.
 type O struct {
 	S        *mgo.Session
 	DName    string
@@ -89,6 +90,7 @@ func New(o *O) *App {
 	return a
 }
 
+// Router returns a new mux router which can be used to start an app.
 func (a *App) Router() *mux.Router {
 	r := mux.NewRouter()
 	r.Handle("/api/projects", a.newAuthHandler(a.IndexProject)).Methods("GET")
