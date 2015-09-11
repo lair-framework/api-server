@@ -94,9 +94,16 @@ func (a *App) UpdateProject(w http.ResponseWriter, req *http.Request) {
 
 	forcePorts := false
 	// Read 'force-ports' URL parameter
-	forcePortsStr := vars["force-ports"]
+	forcePortsStr := req.FormValue("force-ports")
 	if forcePortsStr == "true" {
 		forcePorts = true
+	}
+
+	limitHosts := false
+	// Read 'all-hosts' URL parameter
+	limitHostsStr := req.FormValue("limit-hosts")
+	if limitHostsStr == "true" {
+		limitHosts = true
 	}
 
 	// Start of import
@@ -327,13 +334,25 @@ func (a *App) UpdateProject(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	// Procss the hosts
+	// Process the hosts
 	for _, docHost := range doc.Hosts {
 		if len(docHost.Services) > MAXPORTS && !forcePorts {
 			// Host exceeds max number of allowable ports. Skip it.
 			skippedHosts[docHost.IPv4] = true
 			msg := fmt.Sprintf(
 				"%s - Host skipped. Exceeded maximum number of ports: %s",
+				time.Now().String(),
+				docHost.IPv4,
+			)
+			project.DroneLog = append(project.DroneLog, msg)
+			continue
+		}
+
+		if len(docHost.Services) <= 0 && limitHosts {
+			// Host has no open ports and client opted to ignore these hosts. Skit it.
+			skippedHosts[docHost.IPv4] = true
+			msg := fmt.Sprintf(
+				"%s - Host skipped. No open ports: %s",
 				time.Now().String(),
 				docHost.IPv4,
 			)

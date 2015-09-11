@@ -71,9 +71,10 @@ type Response struct {
 	Message string
 }
 
-// DOptions are used to pass options to various requst to the Lair API.
+// DOptions are used to pass options to various request to the Lair API.
 type DOptions struct {
 	ForcePorts bool
+	LimitHosts bool
 }
 
 // ImportProject sends an HTTP request to Lair API Server to import a project.
@@ -81,9 +82,14 @@ func (c *C) ImportProject(opts *DOptions, project *lair.Project) (*http.Response
 	client := &http.Client{Transport: c.Transport}
 	resource := fmt.Sprintf(importuri, project.ID)
 	reqURL := &url.URL{Host: c.Host, Path: resource, Scheme: c.Scheme}
+	values := reqURL.Query()
 	if opts.ForcePorts {
-		reqURL.Query().Add("force-ports", "true")
+		values.Add("force-ports", "true")
 	}
+	if opts.LimitHosts {
+		values.Add("limit-hosts", "true")
+	}
+	reqURL.RawQuery = values.Encode()
 	body, err := json.Marshal(project)
 	if err != nil {
 		return nil, err
