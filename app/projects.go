@@ -524,7 +524,7 @@ func (a *App) UpdateProject(w http.ResponseWriter, req *http.Request) {
 			service.Protocol = docService.Protocol
 			service.Port = docService.Port
 
-			if service.Product == "" || service.Product == "Unknown" {
+			if service.Product == "" || strings.ToLower(service.Product) == "unknown" {
 				service.Product = docService.Product
 			}
 
