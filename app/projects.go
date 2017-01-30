@@ -8,13 +8,15 @@ import (
 	"net"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
+
+	"labix.org/v2/mgo"
 
 	"github.com/gorilla/context"
 	"github.com/gorilla/mux"
 	"github.com/lair-framework/api-server/lib/ip"
 	"github.com/lair-framework/go-lair"
-	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 )
 
@@ -526,7 +528,7 @@ func (a *App) UpdateProject(w http.ResponseWriter, req *http.Request) {
 				service.Product = docService.Product
 			}
 
-			if service.Service == "" || service.Service == "Unknown" {
+			if service.Service == "" || strings.ToLower(service.Service) == "unknown" || strings.Contains(service.Service, "?") {
 				service.Service = docService.Service
 			}
 
