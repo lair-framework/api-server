@@ -11,12 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"labix.org/v2/mgo"
-
 	"github.com/gorilla/context"
 	"github.com/gorilla/mux"
 	"github.com/lair-framework/api-server/lib/ip"
 	"github.com/lair-framework/go-lair"
+	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 )
 
