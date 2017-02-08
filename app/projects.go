@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/gorilla/context"
@@ -522,11 +523,11 @@ func (a *App) UpdateProject(w http.ResponseWriter, req *http.Request) {
 			service.Protocol = docService.Protocol
 			service.Port = docService.Port
 
-			if service.Product == "" || service.Product == "Unknown" {
+			if service.Product == "" || strings.ToLower(service.Product) == "unknown" {
 				service.Product = docService.Product
 			}
 
-			if service.Service == "" || service.Service == "Unknown" {
+			if service.Service == "" || strings.ToLower(service.Service) == "unknown" || strings.Contains(service.Service, "?") {
 				service.Service = docService.Service
 			}
 
