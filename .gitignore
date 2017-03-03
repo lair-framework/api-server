@@ -4,3 +4,5 @@ api-server
 
 .idea
 .idea/*
+plugins
+transforms

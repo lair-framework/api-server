@@ -21,10 +21,11 @@ type Transform struct {
 	Update func(*lair.Project)
 }
 
-func buildTransformChain(files []os.FileInfo) ([]Transform, error) {
+func buildTransformChain(directory string, files []os.FileInfo) ([]Transform, error) {
 	var chain []Transform
 	for _, f := range files {
-		p, err := plugin.Open(f.Name())
+		log.Printf("Loading transform %s\n", f.Name())
+		p, err := plugin.Open(filepath.Join(directory, f.Name()))
 		if err != nil {
 			return chain, err
 		}
@@ -122,7 +123,7 @@ func New(o *O) *App {
 		if err != nil {
 			log.Println(err)
 		} else {
-			chain, err := buildTransformChain(files)
+			chain, err := buildTransformChain(o.TransformDirectory, files)
 			if err != nil {
 				log.Println(err)
 			} else {

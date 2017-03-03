@@ -130,6 +130,10 @@ func (a *App) UpdateProject(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	for _, transform := range a.Transforms {
+		transform.Update(&doc)
+	}
+
 	// Append new commands
 	project.Commands = append(project.Commands, doc.Commands...)
 
@@ -154,10 +158,6 @@ func (a *App) UpdateProject(w http.ResponseWriter, req *http.Request) {
 	// Add description if necessary
 	if project.Description == "" {
 		project.Description = doc.Description
-	}
-
-	for _, transform := range a.Transforms {
-		transform.Update(&project)
 	}
 
 	// Used for tracking any hosts that were skipped for exceeding MAXPORTS limit
