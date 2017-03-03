@@ -69,8 +69,9 @@ func main() {
 	}
 
 	a := app.New(&app.O{
-		S:     s,
-		DName: dname,
+		S:                  s,
+		DName:              dname,
+		TransformDirectory: os.Getenv("TRANSFORM_DIR"),
 	})
 
 	db := s.DB(dname)

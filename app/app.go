@@ -1,9 +1,12 @@
 package app
 
 import (
+	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"plugin"
 
 	"github.com/codegangsta/negroni"
 	"github.com/gorilla/mux"
@@ -12,15 +15,40 @@ import (
 	"gopkg.in/mgo.v2"
 )
 
+// Transform is a plugin that will transorm a lair.Project during
+// update.
+type Transform struct {
+	Update func(*lair.Project)
+}
+
+func buildTransformChain(files []os.FileInfo) ([]Transform, error) {
+	var chain []Transform
+	for _, f := range files {
+		p, err := plugin.Open(f.Name())
+		if err != nil {
+			return chain, err
+		}
+		updatefunc, err := p.Lookup("Update")
+		if err != nil {
+			return chain, err
+		}
+		chain = append(chain, Transform{
+			Update: updatefunc.(func(*lair.Project)),
+		})
+	}
+	return chain, nil
+}
+
 // App is used to map global variables used in handlers.
 type App struct {
-	R        *render.Render
-	C        C
-	S        *mgo.Session
-	Version  string
-	History  int
-	Filepath string
-	DName    string
+	R          *render.Render
+	C          C
+	S          *mgo.Session
+	Version    string
+	History    int
+	Filepath   string
+	DName      string
+	Transforms []Transform
 }
 
 // Response is used to return a status and message to handler requests.
@@ -46,9 +74,10 @@ type C struct {
 
 // O is options passed to New.
 type O struct {
-	S        *mgo.Session
-	DName    string
-	Filepath string
+	S                  *mgo.Session
+	DName              string
+	Filepath           string
+	TransformDirectory string
 }
 
 // IsValidStatus returns true if the provided string is a valid lair status.
@@ -66,6 +95,7 @@ func New(o *O) *App {
 	if o.DName == "" {
 		o.DName = "lair"
 	}
+
 	a := &App{
 		S:        o.S,
 		DName:    o.DName,
@@ -87,6 +117,20 @@ func New(o *O) *App {
 		Version: "2",
 		History: 500,
 	}
+	if o.TransformDirectory != "" {
+		files, err := ioutil.ReadDir(o.TransformDirectory)
+		if err != nil {
+			log.Println(err)
+		} else {
+			chain, err := buildTransformChain(files)
+			if err != nil {
+				log.Println(err)
+			} else {
+				a.Transforms = chain
+			}
+		}
+	}
+
 	return a
 }
 
