@@ -27,7 +27,7 @@ $ ./api-server
 ````
 
 ### Writing Transforms
-Writing transform involves implmenting a single function, `Update(p *lair.Project`. Here is a stub.
+Writing a transform involves implementing a single function, `Update(p *lair.Project`. Here is a stub.
 ```
 package main
 
@@ -42,4 +42,4 @@ func Update(p *lair.Project) {
 }
 ```
 
-This can now be built by running `go build -buildmode=plugin`.
+This can be built by executing `go build -buildmode=plugin`.
