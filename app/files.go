@@ -33,14 +33,15 @@ func (f *fileRequest) FieldMap(req *http.Request) binding.FieldMap {
 	}
 }
 
-func (f *fileRequest) Validate(req *http.Request, errs binding.Errors) binding.Errors {
+func (f *fileRequest) Validate(req *http.Request, errs binding.Errors) error {
 	if f.File == nil {
-		errs = append(errs, binding.Error{
-			FieldNames: []string{"file"},
-			Message:    "file required",
-		})
+		return binding.NewError(
+			[]string{"file"},
+			"field error",
+			"file is required",
+		)
 	}
-	return errs
+	return nil
 }
 
 var imgExts = map[string]bool{
@@ -120,7 +121,8 @@ func (a *App) UploadFile(w http.ResponseWriter, req *http.Request) {
 	binding.MaxMemory = 30000000
 
 	u := &fileRequest{}
-	if errs := binding.Bind(req, u); errs.Handle(w) {
+	if errs := binding.Bind(req, u); errs != nil {
+		http.Error(w, errs.Error(), http.StatusBadRequest)
 		return
 	}
 	fh, err := u.File.Open()
