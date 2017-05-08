@@ -115,6 +115,7 @@ func (c *C) ExportProject(id string) (lair.Project, error) {
 	if err != nil {
 		return project, err
 	}
+        defer resp.Body.Close()
 	data, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return project, err
